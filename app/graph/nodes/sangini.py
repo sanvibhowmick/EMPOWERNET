@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
-from app.tools.skills import match_skills_to_jobs
+from app.tools.jobs import match_skills_to_jobs
 from app.tools.legal import legal_audit_tool
 from app.tools.memory import get_user_context
 from app.graph.state import AgentState

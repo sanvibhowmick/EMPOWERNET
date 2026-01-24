@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from app.graph.state import AgentState
-from app.graph.router import get_supervisor_router  # Import your AI router logic
+from app.graph.router import get_supervisor_router
 from app.graph.nodes.supervisor import supervisor_node
 from app.graph.nodes.vakil import vakil_node
 from app.graph.nodes.guru import guru_node
@@ -13,20 +13,22 @@ from app.core.guard import is_emergency
 
 def graph_router(state: AgentState):
     """
-    The central routing logic. 
-    Checks guard.py first, then uses your router.py AI decision.
+    Decides where the conversation goes next.
+    Maps AI router decisions to actual graph nodes.
     """
-    last_msg = state.get("messages", [])[-1].content if state.get("messages") else ""
+    messages = state.get("messages", [])
+    last_msg = messages[-1].content if messages else ""
 
-    # 1. EMERGENCY BYPASS
+    # 1. EMERGENCY BYPASS: Checks for crisis keywords immediately
     if is_emergency(last_msg):
         return "durga"
 
-    # 2. AI ROUTING DECISION
-    # Calls the logic from your router.py
+    # 2. AI ROUTING: Asks the supervisor logic which agent is needed
     next_step = get_supervisor_router(state)
     
-    if next_step == "FINISH":
+    # 3. FIXING THE 'GENERAL' KEYERROR:
+    # If the supervisor says 'general' (like for 'hi') or 'FINISH', we go to END.
+    if next_step in ["general", "FINISH", "end"]:
         return "end"
     
     return next_step
@@ -35,7 +37,7 @@ def graph_router(state: AgentState):
 
 builder = StateGraph(AgentState)
 
-# 1. Add Nodes
+# 1. Register All Nodes
 builder.add_node("supervisor", supervisor_node)
 builder.add_node("vakil", vakil_node)
 builder.add_node("guru", guru_node)
@@ -45,19 +47,21 @@ builder.add_node("sakhi", sakhi_node)
 builder.add_node("chaukas", chaukas_node)
 builder.add_node("durga", durga_node)
 
-# 2. Set Entry Point
+# 2. Set the starting point
 builder.set_entry_point("supervisor")
 
-# 3. Define Specialist Edges (Specialists always return to Supervisor)
-builder.add_edge("vakil", "supervisor")
-builder.add_edge("guru", "supervisor")
-builder.add_edge("udyami", "supervisor")
-builder.add_edge("sangini", "supervisor")
-builder.add_edge("sakhi", "supervisor")
-builder.add_edge("chaukas", "supervisor")
-builder.add_edge("durga", "supervisor")
+# 3. ONE-WAY SPECIALIST EDGES (The Financial Shield)
+# Once an agent (like Vakil) answers, it finishes. 
+# This prevents it from looping back and spending more money.
+builder.add_edge("vakil", END)
+builder.add_edge("guru", END)
+builder.add_edge("udyami", END)
+builder.add_edge("sangini", END)
+builder.add_edge("sakhi", END)
+builder.add_edge("chaukas", END)
+builder.add_edge("durga", END)
 
-# 4. Integrate your router.py logic as the Conditional Edge
+# 4. Integrate the Conditional Router
 builder.add_conditional_edges(
     "supervisor",
     graph_router,
@@ -69,10 +73,9 @@ builder.add_conditional_edges(
         "sakhi": "sakhi",
         "chaukas": "chaukas",
         "durga": "durga",
-        "general": "supervisor",
-        "end": END
+        "end": END # This maps the "end" string from graph_router to the actual END
     }
 )
 
-# 5. Compile
+# 5. Compile the Workflow
 vesta_swarm = builder.compile()
