@@ -1,0 +1,30 @@
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.*.local
+
+# --- Python & Virtual Environments ---
+venv/
+env/
+ENV/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Databases & Local Storage ---
+# We keep the code, but not the actual data files
+chroma_db/
+*.db
+*.sqlite3
+temp_*.jpg
+temp_*.png
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
