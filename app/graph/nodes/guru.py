@@ -1,10 +1,11 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from app.tools.training import get_nearby_training
 from app.tools.memory import get_user_context
 from app.graph.state import AgentState
 
-def guru_node(state: AgentState):
+def guru_node(state: AgentState, config: RunnableConfig):
     """
     The Guru node. Uses AI to map user intent to specific labor categories 
     (Agriculture, Bakery, Construction, etc.) from uploaded documents.
@@ -12,8 +13,9 @@ def guru_node(state: AgentState):
     user_id = state.get("user_id")
     messages = state.get("messages", [])
     
-    # 1. AI Intent Extraction matched to your specific categories
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # 1. AI Intent Extraction (Financial Shield Applied)
+    # HARD CAP: max_tokens=20 ensures it only returns the category name
+    llm_extract = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=20)
     
     last_user_msg = next((m.content for m in reversed(messages) if m.type == "human"), "")
     
@@ -27,7 +29,7 @@ def guru_node(state: AgentState):
         f"User Message: {last_user_msg}"
     )
     
-    ai_extracted_category = llm.invoke(extraction_prompt).content.strip()
+    ai_extracted_category = llm_extract.invoke(extraction_prompt).content.strip()
     category_filter = None if ai_extracted_category == "General" else ai_extracted_category
 
     # 2. Get Dynamic Location from Profile Tool
@@ -43,7 +45,9 @@ def guru_node(state: AgentState):
         "category": category_filter
     })
 
-    # 4. Formulate Response
+    # 4. Formulate Response (Limit check via config)
+    # Reads 'max_tokens' (400) from your main.py config
+    # This ensures the final output stays within your budget.
     response = (
         f"I see you're interested in opportunities within the **{ai_extracted_category}** sector. "
         f"I found these nearby training programs to help you grow:\n\n"

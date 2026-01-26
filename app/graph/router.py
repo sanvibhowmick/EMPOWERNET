@@ -17,7 +17,8 @@ def get_supervisor_router(state: AgentState):
     """
     Analyzes conversation history and selects the correct specialized agent node.
     """
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    # ENFORCED: Added max_tokens=100 to ensure the gpt-4o model remains cost-effective and avoids 'yapping'
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=100) 
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are the VESTA Supervisor, an expert at directing informal workers to the right 'Digital Didi' agent.

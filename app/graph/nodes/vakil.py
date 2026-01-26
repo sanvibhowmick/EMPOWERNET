@@ -1,9 +1,10 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from app.tools.legal import legal_audit_tool
 from app.graph.state import AgentState
 
-def vakil_node(state: AgentState):
+def vakil_node(state: AgentState, config: RunnableConfig):
     """
     The Vakil (Legal Expert) node.
     Uses AI to map user queries to specific labor categories 
@@ -19,8 +20,9 @@ def vakil_node(state: AgentState):
     if not last_user_message:
         return {"messages": [AIMessage(content="I am ready to help with legal questions.")]}
 
-    # 2. AI Category Extraction (Matching your PDF filenames/content)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # 2. AI Category Extraction (Financial Shield Applied)
+    # HARD CAP: max_tokens=20 ensures it only returns the category name
+    llm_extract = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=20)
     
     extraction_prompt = (
         "Analyze this worker's query and map it to exactly ONE of these "
@@ -30,7 +32,7 @@ def vakil_node(state: AgentState):
         f"Worker Message: {last_user_message}"
     )
     
-    target_category = llm.invoke(extraction_prompt).content.strip()
+    target_category = llm_extract.invoke(extraction_prompt).content.strip()
     
     print(f"⚖️ Vakil Agent: Identifying legal category as '{target_category}'")
 
@@ -39,8 +41,11 @@ def vakil_node(state: AgentState):
     audit_query = f"What is the 2026 minimum wage for {target_category}? {last_user_message}"
     legal_context = legal_audit_tool.invoke(audit_query)
 
-    # 4. Final Response
-    # The agent provides a grounded answer based on the PDF data
+    # 4. Final Response (Global Limit enforced via config)
+    # Reads 'max_tokens' (400) from your main.py config
+    limit = config.get("configurable", {}).get("max_tokens", 400)
+    llm_final = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=limit)
+    
     response = (
         f"According to the latest 2026 labor standards for the **{target_category}** sector:\n\n"
         f"{legal_context}\n\n"

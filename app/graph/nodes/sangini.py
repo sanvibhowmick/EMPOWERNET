@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from app.tools.jobs import match_skills_to_jobs
 from app.tools.legal import legal_audit_tool
 from app.tools.memory import get_user_context
@@ -21,9 +22,16 @@ def check_location_safety(lat, lon):
     conn.close()
     return score
 
-def sangini_node(state: AgentState):
+def sangini_node(state: AgentState, config: RunnableConfig):
+    """
+    The Sangini (Career Partner) node.
+    Synthesizes job matches, legal wage audits, and safety scores.
+    """
     user_id = state.get("user_id")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0) # High reasoning for synthesis
+    
+    # Financial Shield: Enforce the token limit from your main.py config
+    limit = config.get("configurable", {}).get("max_tokens", 400)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=limit) 
     
     # 1. Retrieve Dynamic User Data
     profile = get_user_context.invoke({"phone_number": user_id})
@@ -39,14 +47,12 @@ def sangini_node(state: AgentState):
     })
 
     # Returns legal grounding from your PDFs (Agriculture, Bakery, Construction, etc.)
-    # We pass the raw_jobs to the legal tool so it knows which industry to audit
     wage_audit = legal_audit_tool.invoke(f"What is the minimum wage for the jobs mentioned here: {raw_jobs}")
     
     # Returns real-time safety metrics from the Chaukas DB
     safety_score = check_location_safety(user_lat, user_lon)
 
     # 3. AI Response Synthesis
-    # No more hardcoded "Bakery" or "Safe Area" text
     synthesis_prompt = (
         f"You are Sangini, the Career Partner agent. Using the data below, "
         f"present the best job match to the worker. You MUST mention the legal "

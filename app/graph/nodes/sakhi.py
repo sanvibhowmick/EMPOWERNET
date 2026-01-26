@@ -1,38 +1,52 @@
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
-from app.tools.spatial import get_nearby_safety_resources  # Fixed import
+from langchain_core.runnables import RunnableConfig
 from app.tools.memory import get_user_context
 from app.graph.state import AgentState
 
-def sakhi_node(state: AgentState):
+def sakhi_node(state: AgentState, config: RunnableConfig):
     """
-    The Sakhi (Safety Sister) node.
-    Uses the fixed spatial tool to coordinate community-based safety.
+    The Sakhi (Safety & General Help) node.
+    Handles greetings and finding 'Safety Sisters' for walks home.
     """
-    # 1. Get Dynamic Identity from State
     user_id = state.get("user_id")
-    
-    # 2. Get Dynamic Location from DB (No Hardcoding)
+    messages = state.get("messages", [])
+    last_msg = messages[-1].content.lower() if messages else ""
+
+    # 1. Financial Shield: Enforce token limit from your main.py config
+    limit = config.get("configurable", {}).get("max_tokens", 400)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=limit)
+
+    # 2. Handle Greetings / General Help
+    # This ensures a response if the supervisor identifies a 'general' intent
+    if any(greet in last_msg for greet in ["hi", "hello", "namaste", "nomoshkar"]):
+        response = (
+            "Nomoshkar! I am VESTA, your Digital Didi. 🙏\n\n"
+            "I can help you with:\n"
+            "⚖️ **Vakil**: Check if you are getting paid the right minimum wage.\n"
+            "🎓 **Guru**: Find free training programs near you.\n"
+            "🤝 **Sangini**: Find safe, community-vetted jobs.\n"
+            "🛡️ **Sakhi**: Find a sister to walk home with at night.\n\n"
+            "How can I help you today?"
+        )
+        return {
+            "messages": [AIMessage(content=response)],
+            "next_agent": "supervisor"
+        }
+
+    # 3. Handle Safety Logic (Safety Sister Search)
+    # Retrieves user location to find nearby help
     profile = get_user_context.invoke({"phone_number": user_id})
-    user_lat = profile.get("lat")
-    user_lon = profile.get("lon")
+    user_lat, user_lon = profile.get("lat"), profile.get("lon")
 
-    print(f"🕵️‍♀️ Sakhi Agent: Activating community safety net for {user_id}...")
-
-    # 3. Call the tool using its new name from spatial.py
-    # We pass the coordinates retrieved from the user's profile
-    nearby_resources = get_nearby_safety_resources.invoke({
-        "user_lat": user_lat, 
-        "user_lon": user_lon,
-        "radius_km": 1.5  # Slightly wider radius for preventative safety
-    })
-
-    response = (
-        "I am here with you. I have identified the nearest safety resources and "
-        "sisters in your village:\n\n"
-        f"{nearby_resources}\n\n"
-        "Would you like me to alert a 'Safety Sister' that you are walking home, "
-        "or should I stay on the line until you reach safely?"
-    )
+    if not user_lat or not user_lon:
+        response = "I'm here to help you stay safe, but I couldn't find your location. Please share your Live Location on WhatsApp so I can find sisters near you."
+    else:
+        # Placeholder for actual safety sister matching logic
+        response = (
+            f"I see you are at ({user_lat}, {user_lon}). "
+            "I'm searching for a Safety Sister to walk with you home. Please wait a moment..."
+        )
 
     return {
         "messages": [AIMessage(content=response)],

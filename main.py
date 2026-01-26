@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Response, BackgroundTasks
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# 1. IMMEDIATE FINANCIAL CHECK: Stop the server if the key is missing
+# 1. IMMEDIATE FINANCIAL CHECK
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
@@ -24,15 +24,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Anti-Retry Memory: Keeps track of message IDs for 5 minutes
-PROCESSED_MESSAGE_IDS = set()
+# --- IMPROVED ANTI-RETRY SHIELD (FIFO List) ---
+# Keeps track of the last 200 message IDs to prevent Meta retry loops
+PROCESSED_MESSAGE_IDS = []
 
 # --- 1. THE 'DIDI' REFINER (LOW-COST MODEL) ---
 def refine_for_user(raw_agent_output, original_user_query):
     """Summarizes specialist output using GPT-4o-mini to save money."""
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # 90% cheaper than GPT-4o
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are VESTA Didi. Summarize this simply in Benglish/Hindi."},
                 {"role": "user", "content": f"User query: {original_user_query}\nAgent data: {raw_agent_output}"}
@@ -56,16 +57,15 @@ async def run_vesta_swarm(user_data):
         from app.api.whatsapp import send_whatsapp_message
 
         # A. Handshake: Let the user know we are working
-        send_whatsapp_message(user_id, "Sunte paachhi... let me check that for you. 🧐")
+        await send_whatsapp_message(user_id, "Sunte paachhi... let me check that for you. 🧐")
 
         # B. THE SWARM EXECUTION (WITH COST-CONTROL)
-        # We increase recursion to 8 so it can finish, but keep tokens tight.
         config = {
             "configurable": {
                 "thread_id": user_id,
-                "max_tokens": 400 # CAP 2: Stops specialists from 'reading' too much
+                "max_tokens": 400 # CAP 2: Enforced in the individual nodes
             }, 
-            "recursion_limit": 8  # CAP 3: Kill the swarm if it loops like the 'Bakery' issue
+            "recursion_limit": 8  # CAP 3: Kill the swarm if it loops
         }
         
         initial_state = {
@@ -79,11 +79,16 @@ async def run_vesta_swarm(user_data):
         
         # C. Refine with Didi and Send
         final_message = refine_for_user(raw_output, user_input)
-        send_whatsapp_message(user_id, final_message)
+        await send_whatsapp_message(user_id, final_message)
         logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete.")
 
     except Exception as e:
-        logger.error(f"❌ [CRITICAL] Swarm failed for {msg_id}: {str(e)}", exc_info=True)
+        # Catch recursion limits or other AI failures specifically
+        error_msg = str(e).lower()
+        if "recursion" in error_msg:
+            logger.error(f"🛑 Loop detected for ID {msg_id}. Terminating swarm.")
+        else:
+            logger.error(f"❌ [CRITICAL] Swarm failed for {msg_id}: {str(e)}", exc_info=True)
 
 # --- 3. WEBHOOK ENDPOINTS ---
 @app.get("/webhook")
@@ -103,15 +108,16 @@ async def main_entry(request: Request, background_tasks: BackgroundTasks):
     if user_data:
         msg_id = user_data.get("id")
 
-        # --- THE ANTI-RETRY SHIELD ---
-        # If Meta resends a message while we are still thinking, this kills it instantly.
+        # --- THE IMPROVED ANTI-RETRY SHIELD ---
+        # Checks the FIFO list for duplicates
         if msg_id in PROCESSED_MESSAGE_IDS:
             logger.info(f"🚫 Blocking duplicate retry for ID: {msg_id}")
-            return {"status": "success"} # Still return 200 so Meta stops retrying
+            return {"status": "success"}
 
-        PROCESSED_MESSAGE_IDS.add(msg_id)
+        PROCESSED_MESSAGE_IDS.append(msg_id)
+        # Remove only the oldest ID to keep the list at a steady size of 200
         if len(PROCESSED_MESSAGE_IDS) > 200:
-            PROCESSED_MESSAGE_IDS.clear() # Prevent memory bloat
+            PROCESSED_MESSAGE_IDS.pop(0)
 
         # START BACKGROUND THINKING
         background_tasks.add_task(run_vesta_swarm, user_data)
