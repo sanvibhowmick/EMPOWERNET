@@ -20,9 +20,8 @@ def transcribe_audio(file_path: str) -> str:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1", 
                 file=audio_file,
-                # Setting language to None allows the model to auto-detect,
-                # or you can force 'bn' for Bengali or 'hi' for Hindi.
-                language="bn" 
+                
+                language=None
             )
             return transcript.text
     except Exception as e:

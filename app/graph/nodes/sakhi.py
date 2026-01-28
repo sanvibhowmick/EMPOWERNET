@@ -21,14 +21,15 @@ def sakhi_node(state: AgentState, config: RunnableConfig):
     # This ensures a response if the supervisor identifies a 'general' intent
     if any(greet in last_msg for greet in ["hi", "hello", "namaste", "nomoshkar"]):
         response = (
-            "Nomoshkar! I am VESTA, your Digital Didi. 🙏\n\n"
-            "I can help you with:\n"
-            "⚖️ **Vakil**: Check if you are getting paid the right minimum wage.\n"
-            "🎓 **Guru**: Find free training programs near you.\n"
-            "🤝 **Sangini**: Find safe, community-vetted jobs.\n"
-            "🛡️ **Sakhi**: Find a sister to walk home with at night.\n\n"
-            "How can I help you today?"
-        )
+    "Nomoshkar! I am EmpowerNet, your Digital Assistant. 🙏\n\n"
+    "I can help you with:\n"
+    "⚖️ **Legal Support**: Check if you are getting paid the correct minimum wage.\n"
+    "🎓 **Training Support**: Find free skill development programs near you.\n"
+    "🤝 **Job Assistance**: Find safe, community-verified job opportunities.\n"
+    "🛡️ **Safety Support**: Find a trusted companion to walk home with at night.\n\n"
+    "How can I help you today?"
+)
+
         return {
             "messages": [AIMessage(content=response)],
             "next_agent": "supervisor"

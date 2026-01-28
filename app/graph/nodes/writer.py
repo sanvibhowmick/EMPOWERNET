@@ -1,44 +1,47 @@
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from app.graph.state import AgentState
+import re
 
 def writer_node(state: AgentState, config: RunnableConfig):
-    """
-    The Writer (Lekhika Didi) node.
-    Refines technical specialist output into simple, warm, vernacular speech.
-    """
-    # 1. Retrieve the context from the State
+    # 1. Identify the latest message
+    user_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+    latest_input = user_msgs[-1].content.strip() if user_msgs else "Hi"
     technical_report = state["messages"][-1].content
-    user_name = state.get("user_name", "Bhon (Sister)")
-    lang = state.get("preferred_lang", "Bengali")
+    user_name = state.get("user_name") or "Sister"
     
-    # 2. Financial Shield: Use the cheap/fast model for rewriting
-    limit = config.get("configurable", {}).get("max_tokens", 400)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.4, max_tokens=limit)
-
-    # 3. The Persona-Driven Prompt
-    # This prompt forces the AI to think like a community mentor
-    system_prompt = f"""
-    You are 'Lekhika Didi', a wise and kind elder sister from a village in India. 
-    Your goal is to explain the technical info below to {user_name} in very simple {lang}.
+    # 2. Logic: Treat Script and Language as Same
+    # If it looks like English script, it's English. Otherwise, it's the saved local language.
+    is_english = bool(re.fullmatch(r"^[a-zA-Z0-9\s\.,!?']+$", latest_input))
     
-    GUIDELINES:
-    - NO JARGON: Instead of 'Minimum Wage', use 'Sorkari mojuri' (Government pay).
-    - EMPATHY: Use warm greetings. Treat her like family.
-    - VISUALS: Use emojis like 🌾, ⚖️, or 💰 to help those with low literacy.
-    - ANALOGIES: Explain complex ideas using village life examples (e.g., loans are like seeds).
-    - ACTIONABLE: Tell her exactly what to do next in one simple sentence.
-    
-    TECHNICAL INPUT:
-    {technical_report}
-    """
+    # Sync target to user input or database preference
+    target_unit = "English" if is_english else (state.get("language") or "Bengali")
 
-    # 4. Generate the final friendly response
-    final_voice = llm.invoke(system_prompt).content
+    # 3. Model Configuration
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
-    print(f"✍️ Writer Node: Finalizing response in {lang} for {user_name}")
+    # 4. Strict Identity and Unit Prompt
+    system_instructions = (
+        f"IDENTITY: Your name is EmpowerNet.\n\n"
+        f"STRICT RULE: You are speaking in {target_unit}.\n"
+        f"1. If {target_unit} is English: Write ONLY in standard English.\n"
+        f"2. If {target_unit} is Bengali: Write ONLY in Bengali script (বাংলা).\n"
+        f"3. If {target_unit} is Hindi: Write ONLY in Devanagari script (नमस्ते).\n"
+        "4. NEVER use English letters to write Bengali or Hindi words. No transliteration." \
+        "Remember you are talking to rural women use simple terms and not technical jargon. and complex vocabulary\n"
+    )
 
-    return {
-        "messages": [AIMessage(content=final_voice)]
-    }
+    prompt_content = (
+        f"User Name: {user_name}\n"
+        f"Technical Data: {technical_report}\n\n"
+        f"Task: Respond as EmpowerNet in {target_unit} using its native script."
+    )
+
+    # 5. Invoke
+    final_voice = llm.invoke([
+        SystemMessage(content=system_instructions),
+        HumanMessage(content=prompt_content)
+    ]).content
+
+    return {"messages": [AIMessage(content=final_voice)]}

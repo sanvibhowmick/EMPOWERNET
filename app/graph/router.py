@@ -4,41 +4,61 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from app.graph.state import AgentState
 
-# 1. Define the 7 Agents + General + FINISH
+# 1. Define the 7 Agents + sakhi + end
 class RouterResponse(BaseModel):
     """The routing decision for the VESTA supervisor."""
     next_step: Literal[
-        "vakil", "durga", "guru", "sakhi", "sangini", "udyami", "chaukas", "general", "FINISH"
+        "vakil", "durga", "guru", "sakhi", "sangini", "udyami", "chaukas", "end"
     ] = Field(
         description="The next specialized agent to act based on the user's needs."
     )
 
-def get_supervisor_router(state: AgentState):
+def graph_router(state: AgentState) -> Literal["vakil", "durga", "guru", "sakhi", "sangini", "udyami", "chaukas", "end"]:
     """
     Analyzes conversation history and selects the correct specialized agent node.
+    Renamed to 'graph_router' to fix the builder.py ImportError.
     """
-    # ENFORCED: Added max_tokens=100 to ensure the gpt-4o model remains cost-effective and avoids 'yapping'
+    messages = state.get("messages", [])
+    if not messages:
+        return "end"
+
+    # --- FINANCIAL SHIELD: Hardcoded Keyword Logic (Fast & Free) ---
+    last_msg = messages[-1].content.lower()
+    
+    # 1. Emergency Fast-Pass
+    if any(word in last_msg for word in ["help", "save", "danger", "police", "sos", "bachao"]):
+        return "durga"
+    
+    # 2. Simple Keyword Mapping
+    if any(word in last_msg for word in ["salary", "wage", "law", "taka", "paisa"]):
+        return "vakil"
+    if any(word in last_msg for word in ["job", "work", "earn", "kaaj"]):
+        return "sangini"
+    if any(word in last_msg for word in ["loan", "shg", "group", "business"]):
+        return "udyami"
+
+    # --- LLM FALLBACK: For complex reasoning ---
+    # Enforced max_tokens=100 for cost-effectiveness
     llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=100) 
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are the VESTA Supervisor, an expert at directing informal workers to the right 'Digital Didi' agent.
-        
-        Route the user based on these strict definitions:
-        - 'vakil': Legal rights, minimum wage audits, or labor law questions.
-        - 'durga': EMERGENCY/SOS. Use this if you detect distress, danger, or immediate safety threats.
-        - 'guru': Education, government skill training (Utkarsh Bangla), or learning opportunities.
-        - 'sakhi': Finding a 'Safety Sister' to walk home with or locating women nearby.
-        - 'sangini': Finding jobs vetted by the community or workplace recommendations.
-        - 'udyami': Micro-loans, Self-Help Group (SHG) financing, or business setup.
-        - 'chaukas': Reporting unsafe areas, flagging red zones, or workplace safety reviews.
-        - 'general': Greetings, how-to-use VESTA, or casual conversation.
-        - 'FINISH': Only when the user explicitly says goodbye or the task is fully complete."""),
+        ("system", """You are the VESTA Supervisor. Route the user based on these definitions:
+        - 'vakil': Legal rights, minimum wage, or labor laws.
+        - 'durga': EMERGENCY/SOS, distress, or immediate threats.
+        - 'guru': Education, government skill training (Utkarsh Bangla).
+        - 'sakhi': Finding safety sisters or general help.
+        - 'sangini': Job finding and workplace recommendations.
+        - 'udyami': Micro-loans, SHG financing, or business setup.
+        - 'chaukas': Reporting unsafe areas or workplace safety.
+        - 'end': If the user is saying goodbye or the task is finished."""),
         ("placeholder", "{messages}"),
     ])
     
-    # Force the router to provide a valid agent name from the list
     supervisor = prompt | llm.with_structured_output(RouterResponse)
     
-    # Process the state to get the decision
-    response = supervisor.invoke(state)
-    return response.next_step
+    try:
+        response = supervisor.invoke(state)
+        return response.next_step
+    except Exception:
+        # Final safety fallback
+        return "sakhi"

@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+import re
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -13,7 +14,7 @@ if not api_key or not api_key.startswith("sk-"):
     print("❌ FATAL: OPENAI_API_KEY is missing or invalid. Shutdown initiated to save costs.")
     sys.exit(1)
 
-app = FastAPI(title="VESTA Secure Multi-Agent Backend")
+app = FastAPI(title="EmpowerNet Secure Multi-Agent Backend")
 client = OpenAI(api_key=api_key)
 
 # Configure "Loud Logging" to catch silent background crashes
@@ -24,28 +25,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- IMPROVED ANTI-RETRY SHIELD (FIFO List) ---
+# --- ANTI-RETRY SHIELD (FIFO List) ---
 # Keeps track of the last 200 message IDs to prevent Meta retry loops
 PROCESSED_MESSAGE_IDS = []
 
-# --- 1. THE 'DIDI' REFINER (LOW-COST MODEL) ---
-def refine_for_user(raw_agent_output, original_user_query):
-    """Summarizes specialist output using GPT-4o-mini to save money."""
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are VESTA Didi. Summarize this simply in Benglish/Hindi."},
-                {"role": "user", "content": f"User query: {original_user_query}\nAgent data: {raw_agent_output}"}
-            ],
-            max_tokens=250 # CAP 1: Limits the cost of the final response
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error(f"❌ Refinement Error: {e}")
-        return raw_agent_output
-
-# --- 2. THE PROTECTED BACKGROUND SWARM ---
+# --- 1. THE PROTECTED BACKGROUND SWARM ---
 async def run_vesta_swarm(user_data):
     """The brain room. Protected by a recursion limit and token caps."""
     user_id = user_data["sender"]
@@ -56,16 +40,15 @@ async def run_vesta_swarm(user_data):
         from app.graph.builder import vesta_swarm
         from app.api.whatsapp import send_whatsapp_message
 
-        # A. Handshake: Let the user know we are working
-        await send_whatsapp_message(user_id, "Sunte paachhi... let me check that for you. 🧐")
+        
 
         # B. THE SWARM EXECUTION (WITH COST-CONTROL)
         config = {
             "configurable": {
                 "thread_id": user_id,
-                "max_tokens": 400 # CAP 2: Enforced in the individual nodes
+                "max_tokens": 400 # CAP 1: Enforced in the individual nodes
             }, 
-            "recursion_limit": 8  # CAP 3: Kill the swarm if it loops
+            "recursion_limit": 8  # CAP 2: Kill the swarm if it loops
         }
         
         initial_state = {
@@ -73,24 +56,24 @@ async def run_vesta_swarm(user_data):
             "user_id": user_id
         }
 
-        # The Swarm 'Thinks' here
+        # The Swarm 'Thinks' here. The output is already formatted by your Writer Node.
         final_state = vesta_swarm.invoke(initial_state, config=config)
-        raw_output = final_state["messages"][-1].content
         
-        # C. Refine with Didi and Send
-        final_message = refine_for_user(raw_output, user_input)
+        # C. Direct Delivery
+        # We take the final message directly from the graph's state to avoid "Benglish" overrides.
+        final_message = final_state["messages"][-1].content
+        
         await send_whatsapp_message(user_id, final_message)
-        logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete.")
+        logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete via EmpowerNet Writer.")
 
     except Exception as e:
-        # Catch recursion limits or other AI failures specifically
         error_msg = str(e).lower()
         if "recursion" in error_msg:
             logger.error(f"🛑 Loop detected for ID {msg_id}. Terminating swarm.")
         else:
             logger.error(f"❌ [CRITICAL] Swarm failed for {msg_id}: {str(e)}", exc_info=True)
 
-# --- 3. WEBHOOK ENDPOINTS ---
+# --- 2. WEBHOOK ENDPOINTS ---
 @app.get("/webhook")
 @app.get("/webhook/")
 async def verify_webhook(request: Request):
@@ -109,13 +92,11 @@ async def main_entry(request: Request, background_tasks: BackgroundTasks):
         msg_id = user_data.get("id")
 
         # --- THE IMPROVED ANTI-RETRY SHIELD ---
-        # Checks the FIFO list for duplicates
         if msg_id in PROCESSED_MESSAGE_IDS:
             logger.info(f"🚫 Blocking duplicate retry for ID: {msg_id}")
             return {"status": "success"}
 
         PROCESSED_MESSAGE_IDS.append(msg_id)
-        # Remove only the oldest ID to keep the list at a steady size of 200
         if len(PROCESSED_MESSAGE_IDS) > 200:
             PROCESSED_MESSAGE_IDS.pop(0)
 

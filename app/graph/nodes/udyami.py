@@ -8,35 +8,48 @@ from app.graph.state import AgentState
 def udyami_node(state: AgentState, config: RunnableConfig):
     """
     The Udyami node.
-    Dynamically retrieves user location and connects them to nearby SHGs 
-    while enforcing strict token limits.
+    Provides business and SHG advice. Location is now optional for general 
+    inquiries to reduce user friction.
     """
-    # 1. Get the unique identifier for the user (WhatsApp Number)
     user_id = state.get("user_id")
+    last_msg = state["messages"][-1].content
     
     print(f"💰 Udyami Agent: Accessing profile for {user_id}...")
 
-    # 2. Retrieve live location from the Database
+    # 1. Retrieve user profile context
     profile = get_user_context.invoke({"phone_number": user_id})
-    
     user_lat = profile.get("lat")
     user_lon = profile.get("lon")
 
-    if not user_lat or not user_lon:
-        return {
-            "messages": [AIMessage(content="I couldn't find your location. Please share your location on WhatsApp so I can find groups near you.")],
-            "next_agent": "supervisor"
-        }
+    # 2. Financial Shield: Token and Model Config
+    conf = config.get("configurable", {})
+    limit = conf.get("max_tokens", 400)
+    llm = ChatOpenAI(model=conf.get("model", "gpt-4o-mini"), temperature=0, max_tokens=limit)
 
-    # 3. Financial Shield: Extract token limit from config
-    # Reads 'max_tokens' (400) from your main.py config
-    limit = config.get("configurable", {}).get("max_tokens", 400)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=limit)
+    # 3. Location-Optional Logic
+    if user_lat and user_lon:
+        # User has location: Find real groups nearby
+        shg_data = get_nearby_shgs.invoke({"user_lat": user_lat, "user_lon": user_lon})
+        location_context = f"The user is at Lat: {user_lat}, Lon: {user_lon}. Nearby groups found: {shg_data}"
+    else:
+        # No location: Provide general setup and loan advice
+        location_context = "User location is unknown. Focus on general SHG formation rules and micro-loan availability in West Bengal."
 
-    # 4. Call the Community Tool with real data
-    shg_connections = get_nearby_shgs.invoke({
-        "user_lat": user_lat, 
-        "user_lon": user_lon
-    })
+    # 4. Formulate the empathetic response
+    system_prompt = f"""
+    You are Udyami Didi, a business mentor for rural women. 
+    Use the following context to answer the question: {location_context}
 
-    # 5. Formulate the response [cite: uploaded:sanvibhowmick/vesta/VESTA-0460c0fcf20d22d8c5e17b96bf721b19
+    If location is missing, DO NOT ask for a location pin immediately. 
+    Instead, explain how SHGs work or how to apply for a small loan. 
+    Only mention sending a location if the user specifically asks 'Where is the nearest group?'.
+    
+    Question: {last_msg}
+    """
+
+    response = llm.invoke(system_prompt).content
+
+    return {
+        "messages": [AIMessage(content=response)],
+        "next_agent": "writer" # Leads directly to the Lekhika node for humanizing
+    }

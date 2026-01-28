@@ -1,72 +1,51 @@
-from langchain_openai import ChatOpenAI
+import logging
 from langchain_core.messages import AIMessage
-from langchain_core.runnables import RunnableConfig
-from app.tools.jobs import match_skills_to_jobs
-from app.tools.legal import legal_audit_tool
-from app.tools.memory import get_user_context
 from app.graph.state import AgentState
-import psycopg2
-import os
+from app.graph.tools.jobs import match_skills_to_jobs
 
-def check_location_safety(lat, lon):
-    """Internal helper to query the Chaukas safety database via PostGIS."""
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    cur = conn.cursor()
-    query = """
-        SELECT AVG(severity_score) FROM safety_reports 
-        WHERE ST_DWithin(location, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, 1000)
+logger = logging.getLogger(__name__)
+
+def sangini_node(state: AgentState):
     """
-    cur.execute(query, (lon, lat))
-    score = cur.fetchone()[0] or 0.0
-    cur.close()
-    conn.close()
-    return score
-
-def sangini_node(state: AgentState, config: RunnableConfig):
+    The Sangini (Job Assistant) specialist node.
+    Coordinates between user skillsets and geographic/textual location data.
     """
-    The Sangini (Career Partner) node.
-    Synthesizes job matches, legal wage audits, and safety scores.
-    """
-    user_id = state.get("user_id")
+    # 1. Retrieve current message and state variables
+    user_query = state["messages"][-1].content
+    user_name = state.get("user_name") or "Sister"
     
-    # Financial Shield: Enforce the token limit from your main.py config
-    limit = config.get("configurable", {}).get("max_tokens", 400)
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=limit) 
+    # 2. Extract Location and Skill Data
+    # These fields should be populated by the Supervisor or DB lookup
+    lat = state.get("user_lat")
+    lon = state.get("user_lon")
+    loc_name = state.get("location_name") # Textual fallback (e.g., 'Bankura')
     
-    # 1. Retrieve Dynamic User Data
-    profile = get_user_context.invoke({"phone_number": user_id})
-    user_lat, user_lon = profile.get("lat"), profile.get("lon")
-    user_skills = profile.get("skills", ["General"])
+    # Skills extraction from state or query
+    skills_raw = state.get("skills") or user_query 
 
-    # 2. Execute Dynamic Tools
-    # Returns real jobs from the 'vetted_jobs' table
-    raw_jobs = match_skills_to_jobs.invoke({
-        "user_skills": user_skills,
-        "user_lat": user_lat,
-        "user_lon": user_lon
-    })
-
-    # Returns legal grounding from your PDFs (Agriculture, Bakery, Construction, etc.)
-    wage_audit = legal_audit_tool.invoke(f"What is the minimum wage for the jobs mentioned here: {raw_jobs}")
+    # 3. FORMATTING FOR THE TOOL (Pydantic Guardrails)
+    # Ensures skills is a list and coordinates are floats to prevent validation errors
+    skills_list = [skills_raw] if isinstance(skills_raw, str) else skills_raw
     
-    # Returns real-time safety metrics from the Chaukas DB
-    safety_score = check_location_safety(user_lat, user_lon)
-
-    # 3. AI Response Synthesis
-    synthesis_prompt = (
-        f"You are Sangini, the Career Partner agent. Using the data below, "
-        f"present the best job match to the worker. You MUST mention the legal "
-        f"minimum wage audit and the safety status of the area.\n\n"
-        f"Worker Skills: {user_skills}\n"
-        f"Available Jobs: {raw_jobs}\n"
-        f"Legal Audit: {wage_audit}\n"
-        f"Safety Score (0=Safe, 1=Danger): {safety_score}\n\n"
-        "Instructions: Be empathetic, clear, and professional. Ask the user 'Do you want this?' at the end."
-    )
-
-    ai_response = llm.invoke(synthesis_prompt).content
+    try:
+        # 4. Invoke the Job Matching Tool
+        # Uses GPS if available, otherwise falls back to location_name
+        raw_jobs = match_skills_to_jobs.invoke({
+            "user_skills": skills_list,
+            "user_lat": float(lat) if lat is not None else None,
+            "user_lon": float(lon) if lon is not None else None,
+            "location_name": loc_name
+        })
+        
+        # 5. Prepare the Technical Report for the Writer Node
+        report_header = f"Agent Sangini Report for {user_name}:\n"
+        report_body = f"I searched for {skills_list} in {loc_name or 'nearby coordinates'}.\n\n{raw_jobs}"
+        report = report_header + report_body
+        
+    except Exception as e:
+        logger.error(f"❌ Sangini Node failed: {str(e)}")
+        report = f"Agent Sangini Error: I encountered a problem searching the job database. Please try again later."
 
     return {
-        "messages": [AIMessage(content=ai_response)],
-        "next_agent": "supervisor"
+        "messages": [AIMessage(content=report)]
     }
