@@ -1,45 +1,57 @@
-from langchain.tools import tool
 import os
-import psycopg2
+import logging
+from langchain_core.tools import tool
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
-DB_URL = os.getenv("DATABASE_URL")
+logger = logging.getLogger(__name__)
 
-@tool
-def get_nearby_training(user_lat: float, user_lon: float, category: str = None):
-    """
-    Finds active training programs within a 5km radius. 
-    Filters by category (e.g., 'Tailoring', 'Computers') if provided.
-    """
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
+raw_url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
+engine = create_engine(raw_url)
 
-    # Query using ST_DWithin for spatial indexing speed
-    query = """
-        SELECT title, provider, location_name, duration_weeks,
-               ST_Distance(coordinates, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography) / 1000 AS dist_km
-        FROM training_programs
-        WHERE status = 'active'
-        AND ST_DWithin(coordinates, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, 5000)
+@tool("get_training_programs")
+def get_training_programs(lat: float, lon: float):
     """
-    params = [user_lon, user_lat, user_lon, user_lat]
-
-    if category:
-        query += " AND category ILIKE %s"  # Case-insensitive matching
-        params.append(f"%{category}%")
+    Finds nearby government training and skill development programs.
+    If none are in the local block, finds the closest program in the state.
+    """
+    query = text("""
+        WITH local_training AS (
+            SELECT program_name, agency, enrollment_deadline,
+                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) / 1000 as dist_km,
+                   'Local' as source
+            FROM training_programs
+            WHERE ST_DWithin(location_geog, ST_MakePoint(:lon, :lat)::geography, 15000)
+        ),
+        fallback_training AS (
+            SELECT program_name, agency, enrollment_deadline,
+                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) / 1000 as dist_km,
+                   'Statewide' as source
+            FROM training_programs
+            WHERE NOT EXISTS (SELECT 1 FROM local_training)
+            ORDER BY dist_km ASC
+            LIMIT 1
+        )
+        SELECT * FROM local_training
+        UNION ALL
+        SELECT * FROM fallback_training
+        ORDER BY dist_km ASC;
+    """)
     
-    query += " ORDER BY dist_km ASC LIMIT 3;"
-
     try:
-        cur.execute(query, tuple(params))
-        results = cur.fetchall()
-        
-        if not results:
-            return f"I couldn't find any active {category or ''} training nearby. Should I look for other skills?"
-
-        programs = [f"🎓 {r[0]} ({r[1]}) in {r[2]} - {r[3]} weeks away." for r in results]
-        return "\n".join(programs)
-    finally:
-        cur.close()
-        conn.close()
+        with engine.connect() as conn:
+            res = conn.execute(query, {"lat": lat, "lon": lon}).fetchall()
+            if not res: 
+                return "No training programs currently available in the database."
+            
+            return [{
+                "program": r[0], 
+                "agency": r[1], 
+                "deadline": str(r[2]), 
+                "distance_km": round(r[3], 1),
+                "type": r[4]
+            } for r in res]
+    except Exception as e:
+        logger.error(f"Training Tool Error: {e}")
+        return "Could not retrieve training programs at this time."

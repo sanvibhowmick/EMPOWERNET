@@ -1,42 +1,56 @@
-from langchain.tools import tool
 import os
-import psycopg2
+import logging
+from langchain_core.tools import tool
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
-DB_URL = os.getenv("DATABASE_URL")
+logger = logging.getLogger(__name__)
 
-@tool
-def get_nearby_shgs(user_lat: float, user_lon: float, radius_km: float = 2.0):
-    """
-    Finds Self-Help Groups (SHGs) within a specific radius of the worker.
-    Use this to connect women to community savings, micro-loans, and collective support.
-    """
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
+raw_url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
+engine = create_engine(raw_url)
 
-    # Spatial query using PostGIS for precise village-level matching
-    query = """
-        SELECT name, focus_area, leader_name, contact_number,
-               ST_Distance(location, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography) / 1000 AS dist_km
-        FROM self_help_groups
-        WHERE ST_DWithin(location, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, %s)
-        ORDER BY dist_km ASC;
+@tool("find_nearby_shgs")
+def find_nearby_shgs(lat: float, lon: float):
     """
-
+    Locates Self-Help Groups (SHGs) and community circles nearby.
+    If none are within 5km, finds the closest group available.
+    """
+    query = text("""
+        WITH local_shgs AS (
+            SELECT shg_name, leader_name, 
+                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) as dist_m,
+                   'Local' as source
+            FROM self_help_groups
+            WHERE ST_DWithin(location_geog, ST_MakePoint(:lon, :lat)::geography, 5000)
+        ),
+        fallback_shgs AS (
+            SELECT shg_name, leader_name, 
+                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) as dist_m,
+                   'Statewide' as source
+            FROM self_help_groups
+            WHERE NOT EXISTS (SELECT 1 FROM local_shgs)
+            ORDER BY dist_m ASC
+            LIMIT 1
+        )
+        SELECT * FROM local_shgs
+        UNION ALL
+        SELECT * FROM fallback_shgs
+        ORDER BY dist_m ASC;
+    """)
+    
     try:
-        cur.execute(query, (user_lon, user_lat, user_lon, user_lat, radius_km * 1000))
-        results = cur.fetchall()
-        
-        if not results:
-            return "No nearby Self-Help Groups found. I can help you learn how to start a new one with your neighbors!"
-
-        shg_list = [
-            f"🤝 {r[0]} ({r[1]}) - Led by {r[2]}. Distance: {round(r[4], 2)}km. Contact: {r[3]}" 
-            for r in results
-        ]
-        
-        return "\n".join(shg_list)
-    finally:
-        cur.close()
-        conn.close()
+        with engine.connect() as conn:
+            res = conn.execute(query, {"lat": lat, "lon": lon}).fetchall()
+            if not res: 
+                return "No registered SHGs found in the system yet."
+            
+            return [{
+                "name": r[0], 
+                "contact": r[1], 
+                "distance": f"{int(r[2])}m" if r[3] == 'Local' else f"{round(r[2]/1000, 1)}km",
+                "type": r[3]
+            } for r in res]
+    except Exception as e:
+        logger.error(f"Community Tool Error: {e}")
+        return "Error searching for community groups."

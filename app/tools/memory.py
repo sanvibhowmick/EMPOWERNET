@@ -1,65 +1,60 @@
-# app/tools/memory.py
-import psycopg2
-import psycopg2.extras
 import os
-from langchain_core.tools import tool
+import logging
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
-@tool
-def upsert_user_profile(phone_number: str, name: str = None, language: str = None, 
-                        lat: float = None, lon: float = None, skills: str = None):
+load_dotenv()
+logger = logging.getLogger(__name__)
+
+# Handle Neon/Postgres URL naming
+raw_url = os.getenv("DATABASE_URL", "")
+if raw_url.startswith("postgres://"):
+    raw_url = raw_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(raw_url)
+
+def upsert_user_profile(phone_number: str, name: str = None, language: str = None, skills: str = None, lat: float = None, lon: float = None):
     """
-    Saves or updates user data. Syncs lat/lon into the PostGIS last_location field.
+    Saves or updates the user's profile in the database.
     """
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    cur = conn.cursor()
-    
-    # We add a step to update the 'last_location' GEOGRAPHY point whenever lat/lon changes
-    query = """
-        INSERT INTO user_profiles (user_id, name, language, lat, lon, skills, last_location)
-        VALUES (%s, %s, %s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)
-        ON CONFLICT (user_id) 
-        DO UPDATE SET 
+    query = text("""
+        INSERT INTO user_profiles (phone_number, name, preferred_lang, skills, lat, lon, last_seen)
+        VALUES (:phone, :name, :lang, :skills, :lat, :lon, CURRENT_TIMESTAMP)
+        ON CONFLICT (phone_number) DO UPDATE SET
             name = COALESCE(EXCLUDED.name, user_profiles.name),
-            language = COALESCE(EXCLUDED.language, user_profiles.language),
+            preferred_lang = COALESCE(EXCLUDED.preferred_lang, user_profiles.preferred_lang),
+            skills = COALESCE(EXCLUDED.skills, user_profiles.skills),
             lat = COALESCE(EXCLUDED.lat, user_profiles.lat),
             lon = COALESCE(EXCLUDED.lon, user_profiles.lon),
-            skills = COALESCE(EXCLUDED.skills, user_profiles.skills),
-            last_location = COALESCE(EXCLUDED.last_location, user_profiles.last_location);
-    """
+            last_seen = CURRENT_TIMESTAMP;
+    """)
+    
     try:
-        # Note: ST_MakePoint takes (longitude, latitude)
-        cur.execute(query, (phone_number, name, language, lat, lon, skills, lon, lat))
-        conn.commit()
-        return "Profile and spatial location synced."
+        with engine.connect() as conn:
+            conn.execute(query, {
+                "phone": phone_number, "name": name, "lang": language, 
+                "skills": skills, "lat": lat, "lon": lon
+            })
+            conn.commit()
+            return True
     except Exception as e:
-        return f"Database error during upsert: {e}"
-    finally:
-        cur.close()
-        conn.close()
+        logger.error(f"❌ Database Upsert Error: {e}")
+        return False
 
-@tool
 def get_user_context(phone_number: str):
     """
-    Retrieves the user's profile. Returns coordinates and PostGIS location string.
+    Retrieves the existing profile to prime the AgentState.
     """
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    query = """
-        SELECT name, language, skills, lat, lon, 
-               ST_AsText(last_location) as location_string 
-        FROM user_profiles 
-        WHERE user_id = %s;
-    """
-    
+    query = text("SELECT name, preferred_lang, skills, lat, lon FROM user_profiles WHERE phone_number = :phone")
     try:
-        cur.execute(query, (phone_number,))
-        result = cur.fetchone()
-        if result:
-            return dict(result)
-        return {"error": "No profile found."}
+        with engine.connect() as conn:
+            res = conn.execute(query, {"phone": phone_number}).fetchone()
+            if res:
+                return {
+                    "name": res[0], "preferred_lang": res[1], 
+                    "skills": res[2], "lat": res[3], "lon": res[4]
+                }
+            return None
     except Exception as e:
-        return f"Database error: {e}"
-    finally:
-        cur.close()
-        conn.close()
+        logger.error(f"❌ Database Retrieval Error: {e}")
+        return None

@@ -1,10 +1,10 @@
 import os
 import logging
 import sys
-import re
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from dotenv import load_dotenv
 from openai import OpenAI
+from langchain_core.messages import HumanMessage
 
 # 1. IMMEDIATE FINANCIAL CHECK
 load_dotenv()
@@ -17,7 +17,7 @@ if not api_key or not api_key.startswith("sk-"):
 app = FastAPI(title="EmpowerNet Secure Multi-Agent Backend")
 client = OpenAI(api_key=api_key)
 
-# Configure "Loud Logging" to catch silent background crashes
+# Configure "Loud Logging"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -25,46 +25,54 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- ANTI-RETRY SHIELD (FIFO List) ---
-# Keeps track of the last 200 message IDs to prevent Meta retry loops
+# --- ANTI-RETRY SHIELD ---
 PROCESSED_MESSAGE_IDS = []
 
 # --- 1. THE PROTECTED BACKGROUND SWARM ---
-async def run_vesta_swarm(user_data):
-    """The brain room. Protected by a recursion limit and token caps."""
-    user_id = user_data["sender"]
+async def run_empowernet_swarm(user_data):
+    """The EmpowerNet Brain Room."""
+    user_id = str(user_data["sender"])
     user_input = user_data["content"]
     msg_id = user_data.get("id", "unknown")
 
     try:
-        from app.graph.builder import vesta_swarm
+        # Import the correctly named swarm and tools
+        from app.graph.builder import empower_swarm
         from app.api.whatsapp import send_whatsapp_message
-
         
-
         # B. THE SWARM EXECUTION (WITH COST-CONTROL)
         config = {
             "configurable": {
                 "thread_id": user_id,
-                "max_tokens": 400 # CAP 1: Enforced in the individual nodes
             }, 
-            "recursion_limit": 8  # CAP 2: Kill the swarm if it loops
+            "recursion_limit": 10  # Slightly higher to allow Memory -> Supervisor -> Specialist -> Supervisor -> Writer
         }
         
+        # Detect initial language (Memory Node will refine this further)
+        # Default to Bengali for rural West Bengal context unless greeting in English
+        initial_lang = "English" if any(word in user_input.lower() for word in ["hi", "hello", "help"]) else "Bengali"
+        
+        # SYNC RULE: Language = Script
+        initial_script = "Native" if initial_lang != "English" else "English"
+
         initial_state = {
-            "messages": [{"role": "user", "content": user_input}],
-            "user_id": user_id
+            "messages": [HumanMessage(content=user_input)],
+            "user_id": user_id,
+            "preferred_lang": initial_lang,
+            "preferred_script": initial_script,
+            "next_agent": "memory" # Start at memory node
         }
 
-        # The Swarm 'Thinks' here. The output is already formatted by your Writer Node.
-        final_state = vesta_swarm.invoke(initial_state, config=config)
+        # C. SWARM EXECUTION
+        logger.info(f"🚀 EmpowerNet Swarm triggered for {user_id} | Msg ID: {msg_id}")
+        final_state = empower_swarm.invoke(initial_state, config=config)
         
-        # C. Direct Delivery
-        # We take the final message directly from the graph's state to avoid "Benglish" overrides.
+        # D. DIRECT DELIVERY
+        # The final message from the Writer node
         final_message = final_state["messages"][-1].content
         
         await send_whatsapp_message(user_id, final_message)
-        logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete via EmpowerNet Writer.")
+        logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete.")
 
     except Exception as e:
         error_msg = str(e).lower()
@@ -75,23 +83,19 @@ async def run_vesta_swarm(user_data):
 
 # --- 2. WEBHOOK ENDPOINTS ---
 @app.get("/webhook")
-@app.get("/webhook/")
 async def verify_webhook(request: Request):
     if request.query_params.get("hub.verify_token") == os.getenv("VERIFY_TOKEN"):
         return Response(content=request.query_params.get("hub.challenge"), media_type="text/plain")
     return Response(content="Forbidden", status_code=403)
 
 @app.post("/webhook")
-@app.post("/webhook/")
 async def main_entry(request: Request, background_tasks: BackgroundTasks):
-    """Instant-response entry point to block Meta retries."""
     from app.api.whatsapp import handle_whatsapp_message
     user_data = await handle_whatsapp_message(request)
     
     if user_data:
         msg_id = user_data.get("id")
 
-        # --- THE IMPROVED ANTI-RETRY SHIELD ---
         if msg_id in PROCESSED_MESSAGE_IDS:
             logger.info(f"🚫 Blocking duplicate retry for ID: {msg_id}")
             return {"status": "success"}
@@ -101,9 +105,9 @@ async def main_entry(request: Request, background_tasks: BackgroundTasks):
             PROCESSED_MESSAGE_IDS.pop(0)
 
         # START BACKGROUND THINKING
-        background_tasks.add_task(run_vesta_swarm, user_data)
+        background_tasks.add_task(run_empowernet_swarm, user_data)
         
-        # RETURN SUCCESS INSTANTLY (Meta expects this in < 3 seconds)
+        # RETURN SUCCESS INSTANTLY
         return {"status": "success"}
 
     return {"status": "ignored"}
