@@ -28,7 +28,8 @@ C=dict(bg="#080C12",surface="#0D1219",card="#111827",border="rgba(255,255,255,0.
 FB="'DM Sans', sans-serif"; FM="'JetBrains Mono', monospace"; FH="'Syne', sans-serif"
 GFONTS=("https://fonts.googleapis.com/css2?family=Syne:wght@700;800&"
         "family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap")
-PALETTE=[C["cyan"],C["emerald"],C["amber"],C["rose"],C["violet"],C["blue"],"#FF6D00","#1DE9B6","#F06292","#80CBC4"]
+PALETTE=[C["cyan"],C["emerald"],C["amber"],C["rose"],C["violet"],C["blue"],
+         "#FF6D00","#1DE9B6","#F06292","#80CBC4","#A5D6A7","#FFE082"]
 
 WB_GEO={"type":"FeatureCollection","features":[
     {"type":"Feature","id":"KOLKATA","geometry":{"type":"Polygon","coordinates":[[[88.20,22.46],[88.47,22.46],[88.47,22.68],[88.20,22.68],[88.20,22.46]]]}},
@@ -126,47 +127,38 @@ def get_safety_geo(d=None):
         return fetch("SELECT COALESCE(category,'—') cat,description,lat,lon FROM safety_reports WHERE lat BETWEEN %s AND %s AND lon BETWEEN %s AND %s LIMIT 400",(clat-.7,clat+.7,clon-.7,clon+.7))
     return fetch("SELECT COALESCE(category,'—') cat,description,lat,lon FROM safety_reports LIMIT 600")
 
-def get_jobs_by_cat(d=None,b=None):
-    if b: return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s AND UPPER(block)=%s GROUP BY occ ORDER BY cnt DESC LIMIT 12",(d,b))
-    if d: return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s GROUP BY occ ORDER BY cnt DESC LIMIT 12",(d,))
-    return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile GROUP BY occ ORDER BY cnt DESC LIMIT 12")
+# ── chart data ────────────────────────────────────────────────────────────────
 
-# NEW: Jobs available by SHG/training category
-def get_jobs_avail_by_category(d=None,b=None):
-    """Fetch job opportunity counts grouped by SHG category (proxy for sector/industry availability)."""
+def get_vetted_jobs_by_category(d=None, b=None):
+    """Count vetted jobs grouped by category. Falls back to state-level if district columns absent."""
     if b:
-        return fetch("""
-            SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,
-                   COUNT(*) cnt
-            FROM self_help_groups
-            WHERE UPPER(district)=%s AND UPPER(block)=%s
-            GROUP BY cat ORDER BY cnt DESC LIMIT 10
-        """,(d,b))
+        rows = fetch("""SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt
+                        FROM vetted_jobs WHERE UPPER(district)=%s AND UPPER(block)=%s
+                        GROUP BY cat ORDER BY cnt DESC LIMIT 12""",(d,b))
+        if rows: return rows
     if d:
-        return fetch("""
-            SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,
-                   COUNT(*) cnt
-            FROM self_help_groups
-            WHERE UPPER(district)=%s
-            GROUP BY cat ORDER BY cnt DESC LIMIT 10
-        """,(d,))
-    return fetch("""
-        SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,
-               COUNT(*) cnt
-        FROM self_help_groups
-        GROUP BY cat ORDER BY cnt DESC LIMIT 10
-    """)
+        rows = fetch("""SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt
+                        FROM vetted_jobs WHERE UPPER(district)=%s
+                        GROUP BY cat ORDER BY cnt DESC LIMIT 12""",(d,))
+        if rows: return rows
+    return fetch("""SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt
+                    FROM vetted_jobs GROUP BY cat ORDER BY cnt DESC LIMIT 12""")
 
-def get_skill_dist(d=None,b=None):
-    if b: return fetch("SELECT COALESCE(skill_level,'Unskilled') sl,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s AND UPPER(block)=%s GROUP BY sl",(d,b))
-    if d: return fetch("SELECT COALESCE(skill_level,'Unskilled') sl,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s GROUP BY sl",(d,))
-    return fetch("SELECT COALESCE(skill_level,'Unskilled') sl,COUNT(*) cnt FROM user_profile GROUP BY sl")
+def get_shg_category_dist(d=None, b=None):
+    if b: return fetch("SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt FROM self_help_groups WHERE UPPER(district)=%s AND UPPER(block)=%s GROUP BY cat ORDER BY cnt DESC LIMIT 10",(d,b))
+    if d: return fetch("SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt FROM self_help_groups WHERE UPPER(district)=%s GROUP BY cat ORDER BY cnt DESC LIMIT 10",(d,))
+    return fetch("SELECT COALESCE(NULLIF(TRIM(category),''),'Other') cat,COUNT(*) cnt FROM self_help_groups GROUP BY cat ORDER BY cnt DESC LIMIT 10")
 
 def get_safety_cats(d=None):
     if d:
         clat,clon=DC.get(d,(23,87.8))
         return fetch("SELECT COALESCE(category,'Other') cat,COUNT(*) cnt FROM safety_reports WHERE lat BETWEEN %s AND %s AND lon BETWEEN %s AND %s GROUP BY cat ORDER BY cnt DESC LIMIT 8",(clat-.7,clat+.7,clon-.7,clon+.7))
     return fetch("SELECT COALESCE(category,'Other') cat,COUNT(*) cnt FROM safety_reports GROUP BY cat ORDER BY cnt DESC LIMIT 8")
+
+def get_occupation_dist(d=None, b=None):
+    if b: return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s AND UPPER(block)=%s GROUP BY occ ORDER BY cnt DESC LIMIT 10",(d,b))
+    if d: return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile WHERE UPPER(district)=%s GROUP BY occ ORDER BY cnt DESC LIMIT 10",(d,))
+    return fetch("SELECT COALESCE(NULLIF(TRIM(primary_occupation),''),'Other') occ,COUNT(*) cnt FROM user_profile GROUP BY occ ORDER BY cnt DESC LIMIT 10")
 
 # ── MAPS ──────────────────────────────────────────────────────────────────────
 def mlay(lat,lon,zoom):
@@ -180,7 +172,6 @@ def make_state_map(shg_d,usr_d,trn_d,sfe_total):
     z=[shg_d.get(d,0) for d in ALL_DISTRICTS]
     cd=[[shg_d.get(d,0),usr_d.get(d,0),trn_d.get(d,0)] for d in ALL_DISTRICTS]
     fig=go.Figure()
-    # ── trace 0: choropleth (drill target on state level) ──
     fig.add_trace(go.Choroplethmapbox(
         geojson=WB_GEO,locations=ALL_DISTRICTS,z=z,featureidkey="id",
         colorscale=[[0,"#05111f"],[0.35,"#00395a"],[0.7,"#0099cc"],[1,"#00E5FF"]],
@@ -195,7 +186,6 @@ def make_state_map(shg_d,usr_d,trn_d,sfe_total):
                        "👤 Users: <b>%{customdata[1]:,}</b><br>"
                        "🎓 Training: <b>%{customdata[2]:,}</b><br>"
                        "<i style='color:#64748B'>Click to drill in →</i><extra></extra>")))
-    # ── traces 1+: scatter layers (hover-only, won't trigger drill) ──
     rows=get_shgs_geo()
     if rows:
         df=pd.DataFrame(rows).dropna(subset=["lat","lon"])
@@ -219,13 +209,11 @@ def make_district_map(district,blocks_df):
     clat,clon=DC.get(district,(23,87.8))
     fig=go.Figure()
     feat=next((f for f in WB_GEO["features"] if f["id"]==district),None)
-    # ── trace 0: district outline ──
     if feat:
         coords=feat["geometry"]["coordinates"][0]
         fig.add_trace(go.Scattermapbox(lat=[c[1] for c in coords]+[coords[0][1]],
             lon=[c[0] for c in coords]+[coords[0][0]],mode="lines",
             line=dict(color=C["cyan"],width=2.5),hoverinfo="none",showlegend=False))
-    # ── trace 1: block bubbles (drill target on district level) ──
     if not blocks_df.empty:
         df=blocks_df.copy()
         df["shg_count"]=pd.to_numeric(df["shg_count"],errors="coerce").fillna(0)
@@ -240,7 +228,6 @@ def make_district_map(district,blocks_df):
             valid=df
         mx=max(float(valid["shg_count"].max()),1)
         sizes=(valid["shg_count"]/mx*26+12).tolist()
-        # customdata[0]="BLOCK" is the drill-down trigger key
         cd=[["BLOCK",str(row["block"]),int(row["shg_count"]),int(row["user_count"])] for _,row in valid.iterrows()]
         fig.add_trace(go.Scattermapbox(lat=valid["lat"].tolist(),lon=valid["lon"].tolist(),
             mode="markers+text",marker=dict(size=sizes,color=C["cyan"],opacity=0.88),
@@ -251,7 +238,6 @@ def make_district_map(district,blocks_df):
                            "👥 SHGs: <b>%{customdata[2]}</b><br>"
                            "👤 Users: <b>%{customdata[3]}</b><br>"
                            "<i style='color:#64748B'>Click to drill in →</i><extra></extra>")))
-    # ── traces 2+: scatter overlays ──
     rows=get_shgs_geo(d=district)
     if rows:
         df2=pd.DataFrame(rows).dropna(subset=["lat","lon"])
@@ -301,114 +287,175 @@ def make_block_map(district,block,vdf):
     fig.update_layout(**mlay(clat,clon,11.0))
     return fig
 
-# ── CHARTS ────────────────────────────────────────────────────────────────────
-def cbase(title,h):
-    return dict(title=dict(text=f"<b>{title}</b>",font=dict(color=C["muted"],size=10,family=FB),x=0.01,y=0.97),
-                paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",height=h,
-                hoverlabel=dict(bgcolor="#0D1219",font_color=C["text"],font_family=FB,font_size=12),
-                font=dict(family=FB,color=C["muted"]))
+# ── CHART BASE ────────────────────────────────────────────────────────────────
+def cbase(title, h):
+    return dict(
+        title=dict(text=f"<b>{title}</b>",
+                   font=dict(color=C["muted"], size=10, family=FB), x=0.01, y=0.97),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=h,
+        hoverlabel=dict(bgcolor="#0D1219", font_color=C["text"], font_family=FB, font_size=12),
+        font=dict(family=FB, color=C["muted"]),
+        margin=dict(l=10, r=10, t=34, b=10),
+    )
 
-def make_jobs_chart(d=None,b=None):
-    rows=get_jobs_by_cat(d,b)
-    if not rows: rows=[{"occ":"No data","cnt":1}]
-    df=pd.DataFrame(rows); df["cnt"]=pd.to_numeric(df["cnt"],errors="coerce").fillna(0).astype(int)
-    df=df.sort_values("cnt",ascending=True)
-    fig=go.Figure()
-    fig.add_trace(go.Bar(x=df["cnt"],y=df["occ"],orientation="h",
-        marker=dict(color=df["cnt"],colorscale=[[0,"#003550"],[0.5,"#0077aa"],[1,"#00E5FF"]],
-                    showscale=False,line=dict(width=0)),
-        text=df["cnt"].apply(lambda v:f"{v:,}"),textposition="outside",
-        textfont=dict(color=C["muted"],size=9,family=FM),
-        hovertemplate="<b>%{y}</b>: <b>%{x:,} people</b><extra></extra>",cliponaxis=False))
-    layout=cbase("JOBS / OCCUPATIONS BREAKDOWN",320)
-    mx=int(df["cnt"].max()) if len(df) else 1
-    layout.update(margin=dict(l=10,r=85,t=34,b=10),
-                  xaxis=dict(showgrid=False,showticklabels=False,zeroline=False,range=[0,mx*1.22]),
-                  yaxis=dict(tickfont=dict(color="#94A3B8",size=10,family=FB),gridcolor="rgba(0,0,0,0)",automargin=True),
-                  bargap=0.22)
+# ── CHART 1 ── TREEMAP: Vetted Jobs by Category ───────────────────────────────
+def make_treemap_chart(d=None, b=None):
+    rows = get_vetted_jobs_by_category(d, b)
+    if not rows:
+        rows = [{"cat": "No data", "cnt": 1}]
+    df = pd.DataFrame(rows)
+    df["cnt"] = pd.to_numeric(df["cnt"], errors="coerce").fillna(0).astype(int)
+    total = df["cnt"].sum() or 1
+    df["pct"] = (df["cnt"] / total * 100).round(1)
+    colors = [PALETTE[i % len(PALETTE)] for i in range(len(df))]
+
+    fig = go.Figure(go.Treemap(
+        labels=df["cat"].tolist(),
+        parents=[""] * len(df),
+        values=df["cnt"].tolist(),
+        customdata=df["pct"].tolist(),
+        texttemplate="<b>%{label}</b><br>%{value:,}<br>%{customdata}%",
+        textfont=dict(family=FB, size=11, color=C["text"]),
+        hovertemplate="<b>%{label}</b><br>Jobs: <b>%{value:,}</b><br>Share: <b>%{customdata}%</b><extra></extra>",
+        marker=dict(
+            colors=colors,
+            line=dict(width=2, color=C["bg"]),
+            pad=dict(t=6, l=4, r=4, b=4),
+        ),
+        pathbar_visible=False,
+    ))
+    layout = cbase("VETTED JOBS BY CATEGORY", 290)
+    layout.update(margin=dict(l=4, r=4, t=34, b=4))
     fig.update_layout(**layout)
     return fig
 
-def make_skill_chart(d=None,b=None):
-    rows=get_skill_dist(d,b)
-    if not rows: rows=[{"sl":"No data","cnt":1}]
-    df=pd.DataFrame(rows); df["cnt"]=pd.to_numeric(df["cnt"],errors="coerce").fillna(0).astype(int)
-    fig=go.Figure()
-    fig.add_trace(go.Pie(labels=df["sl"],values=df["cnt"],hole=0.58,
-        marker=dict(colors=PALETTE[:len(df)],line=dict(color=C["bg"],width=2)),
-        textinfo="percent",textfont=dict(color=C["text"],size=9,family=FM),
-        hovertemplate="<b>%{label}</b><br>%{value:,} users (%{percent})<extra></extra>"))
-    fig.add_annotation(text="<b>SKILL<br>MIX</b>",x=0.5,y=0.5,showarrow=False,
-                       font=dict(color=C["text"],size=10,family=FB),align="center")
-    layout=cbase("USER SKILL LEVELS",260)
-    layout.update(margin=dict(l=10,r=10,t=34,b=10),showlegend=True,
-                  legend=dict(font=dict(color="#94A3B8",size=9,family=FB),
-                              bgcolor="rgba(0,0,0,0)",orientation="v",x=1.0,y=0.5))
-    fig.update_layout(**layout); return fig
-
-def make_safety_chart(d=None):
-    rows=get_safety_cats(d)
-    if not rows: rows=[{"cat":"No data","cnt":1}]
-    df=pd.DataFrame(rows); df["cnt"]=pd.to_numeric(df["cnt"],errors="coerce").fillna(0).astype(int)
-    fig=go.Figure()
-    fig.add_trace(go.Bar(x=df["cat"],y=df["cnt"],
-        marker=dict(color=df["cnt"],colorscale=[[0,"#2a0010"],[0.5,"#aa2040"],[1,C["rose"]]],
-                    showscale=False,line=dict(width=0)),
-        text=df["cnt"].apply(lambda v:f"{v:,}"),textposition="outside",
-        textfont=dict(color=C["muted"],size=9,family=FM),
-        hovertemplate="<b>%{x}</b>: <b>%{y:,}</b><extra></extra>"))
-    layout=cbase("SAFETY REPORT TYPES",240)
-    mx=int(df["cnt"].max()) if len(df) else 1
-    layout.update(margin=dict(l=10,r=10,t=34,b=60),
-                  xaxis=dict(tickfont=dict(color="#64748B",size=9,family=FB),tickangle=-35,gridcolor="rgba(0,0,0,0)",automargin=True),
-                  yaxis=dict(tickfont=dict(color="#64748B",size=8,family=FM),gridcolor="rgba(255,255,255,0.04)",zeroline=False,range=[0,mx*1.18]),
-                  bargap=0.28)
-    fig.update_layout(**layout); return fig
-
-# ── NEW: Jobs Available by Category (replaces training chart) ────────────────
-def make_jobs_category_chart(d=None,b=None):
-    """Horizontal stacked-style bar showing jobs available per SHG sector / category."""
-    rows=get_jobs_avail_by_category(d,b)
+# ── CHART 2 ── POLAR ROSE (Barpolar): SHG Category Distribution ──────────────
+def make_polar_chart(d=None, b=None):
+    rows = get_shg_category_dist(d, b)
     if not rows:
-        rows=[{"cat":"No data","cnt":1}]
-    df=pd.DataFrame(rows)
-    df["cnt"]=pd.to_numeric(df["cnt"],errors="coerce").fillna(0).astype(int)
-    df=df.sort_values("cnt",ascending=True)
+        rows = [{"cat": "No data", "cnt": 1}]
+    df = pd.DataFrame(rows)
+    df["cnt"] = pd.to_numeric(df["cnt"], errors="coerce").fillna(0).astype(int)
+    n = len(df)
+    theta = [round(i * 360 / n, 1) for i in range(n)]
+    colors = [PALETTE[i % len(PALETTE)] for i in range(n)]
 
-    total=df["cnt"].sum() or 1
-    df["pct"]=(df["cnt"]/total*100).round(1)
-
-    colors=[PALETTE[i % len(PALETTE)] for i in range(len(df))]
-
-    fig=go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["cnt"],
-        y=df["cat"],
-        orientation="h",
-        marker=dict(
-            color=colors,
-            line=dict(width=0),
+    fig = go.Figure()
+    for i, row in df.iterrows():
+        fig.add_trace(go.Barpolar(
+            r=[int(row["cnt"])],
+            theta=[theta[i]],
+            width=[max(360 / n - 4, 10)],
+            name=str(row["cat"]),
+            marker_color=colors[i],
+            marker_line_color=C["bg"],
+            marker_line_width=1.5,
             opacity=0.88,
+            hovertemplate=f"<b>{row['cat']}</b><br>SHGs: <b>{int(row['cnt']):,}</b><extra></extra>",
+        ))
+
+    layout = cbase("SHG CATEGORIES — POLAR", 290)
+    layout.update(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            angularaxis=dict(
+                tickfont=dict(color=C["muted"], size=8, family=FB),
+                linecolor=C["border"], gridcolor=C["border"],
+                tickvals=theta,
+                ticktext=df["cat"].str[:13].tolist(),
+                direction="clockwise", rotation=90,
+            ),
+            radialaxis=dict(
+                visible=True,
+                tickfont=dict(color=C["dim"], size=7, family=FM),
+                gridcolor="rgba(255,255,255,0.05)",
+                linecolor="rgba(0,0,0,0)",
+            ),
         ),
-        text=[f"{v:,}  ({p}%)" for v,p in zip(df["cnt"],df["pct"])],
-        textposition="outside",
-        textfont=dict(color=C["muted"],size=9,family=FM),
-        hovertemplate="<b>%{y}</b><br>Available: <b>%{x:,}</b><br>Share: <b>%{customdata}%</b><extra></extra>",
-        customdata=df["pct"].tolist(),
+        showlegend=False,
+        margin=dict(l=50, r=50, t=44, b=44),
+    )
+    fig.update_layout(**layout)
+    return fig
+
+# ── CHART 3 ── FUNNEL: Safety Reports by Category ────────────────────────────
+def make_funnel_chart(d=None):
+    rows = get_safety_cats(d)
+    if not rows:
+        rows = [{"cat": "No data", "cnt": 1}]
+    df = pd.DataFrame(rows)
+    df["cnt"] = pd.to_numeric(df["cnt"], errors="coerce").fillna(0).astype(int)
+    df = df.sort_values("cnt", ascending=False)
+
+    rose_scale = ["#FF4081","#E91E63","#C2185B","#880E4F","#5C0D30","#3a0820","#250513","#110209"]
+    bar_colors = [rose_scale[min(i, len(rose_scale)-1)] for i in range(len(df))]
+
+    fig = go.Figure(go.Funnel(
+        y=df["cat"].tolist(),
+        x=df["cnt"].tolist(),
+        textposition="inside",
+        textinfo="value+percent initial",
+        textfont=dict(family=FM, size=10, color=C["text"]),
+        hovertemplate="<b>%{y}</b><br>Reports: <b>%{x:,}</b><br>%{percentInitial} of total<extra></extra>",
+        marker=dict(color=bar_colors, line=dict(width=1.5, color=C["bg"])),
+        connector=dict(line=dict(color=C["border"], width=1, dash="dot")),
+        opacity=0.92,
+    ))
+    layout = cbase("SAFETY INCIDENTS — FUNNEL", 290)
+    layout.update(
+        margin=dict(l=10, r=10, t=34, b=10),
+        xaxis=dict(visible=False),
+        yaxis=dict(tickfont=dict(color="#94A3B8", size=10, family=FB)),
+    )
+    fig.update_layout(**layout)
+    return fig
+
+# ── CHART 4 ── LOLLIPOP: User Occupations ────────────────────────────────────
+def make_lollipop_chart(d=None, b=None):
+    rows = get_occupation_dist(d, b)
+    if not rows:
+        rows = [{"occ": "No data", "cnt": 1}]
+    df = pd.DataFrame(rows)
+    df["cnt"] = pd.to_numeric(df["cnt"], errors="coerce").fillna(0).astype(int)
+    df = df.sort_values("cnt", ascending=True)
+
+    fig = go.Figure()
+    # Stem lines (one scatter per row to keep them on y=label)
+    for _, row in df.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[0, int(row["cnt"])],
+            y=[row["occ"], row["occ"]],
+            mode="lines",
+            line=dict(color="rgba(0,229,255,0.15)", width=1.5),
+            showlegend=False, hoverinfo="skip",
+        ))
+    # Dots + labels
+    fig.add_trace(go.Scatter(
+        x=df["cnt"].tolist(),
+        y=df["occ"].tolist(),
+        mode="markers+text",
+        marker=dict(
+            size=14,
+            color=df["cnt"].tolist(),
+            colorscale=[[0,"#003550"],[0.4,"#0077cc"],[1,"#00E5FF"]],
+            showscale=False,
+            line=dict(width=2, color=C["bg"]),
+        ),
+        text=df["cnt"].apply(lambda v: f"{v:,}"),
+        textposition="middle right",
+        textfont=dict(color=C["muted"], size=9, family=FM),
+        hovertemplate="<b>%{y}</b><br>Users: <b>%{x:,}</b><extra></extra>",
+        showlegend=False,
         cliponaxis=False,
     ))
 
-    layout=cbase("JOBS AVAILABLE BY CATEGORY",220)
-    mx=int(df["cnt"].max()) if len(df) else 1
+    layout = cbase("USER OCCUPATIONS — TOP 10", 290)
+    mx = int(df["cnt"].max()) if len(df) else 1
     layout.update(
-        margin=dict(l=10,r=110,t=34,b=10),
-        xaxis=dict(showgrid=False,showticklabels=False,zeroline=False,range=[0,mx*1.35]),
-        yaxis=dict(
-            tickfont=dict(color="#94A3B8",size=10,family=FB),
-            gridcolor="rgba(0,0,0,0)",
-            automargin=True,
-        ),
-        bargap=0.28,
+        margin=dict(l=10, r=70, t=34, b=10),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-mx*0.03, mx*1.28]),
+        yaxis=dict(tickfont=dict(color="#94A3B8", size=10, family=FB),
+                   gridcolor="rgba(0,0,0,0)", automargin=True),
     )
     fig.update_layout(**layout)
     return fig
@@ -469,56 +516,72 @@ app.layout=html.Div([
     dcc.Store(id="drill-state",data={"level":"state","district":None,"block":None}),
     dcc.Store(id="blocks-store",data=[]),
 
+    # ── Header ──
     html.Div([html.Div([
-        html.Div([html.Span("empower",style={"fontFamily":FH,"fontSize":"22px","fontWeight":"800","color":C["cyan"]}),
-                  html.Span("net",style={"fontFamily":FH,"fontSize":"22px","fontWeight":"800","color":C["text"]}),
-                  html.Span("WEST BENGAL",style={"fontFamily":FM,"fontSize":"9px","color":C["muted"],"marginLeft":"10px",
-                    "letterSpacing":"2px","border":f"1px solid {C['dim']}","padding":"2px 6px","borderRadius":"3px"})],
-                 style={"display":"flex","alignItems":"baseline","gap":"1px"}),
-        html.Div([html.Span("WB",style={"fontFamily":FM,"fontSize":"10px","color":C["cyan"]}),
-                  html.Span(id="bc-dist",style={"fontFamily":FM,"fontSize":"10px","color":C["muted"]}),
-                  html.Span(id="bc-block",style={"fontFamily":FM,"fontSize":"10px","color":C["muted"]})],
-                 style={"display":"flex","alignItems":"center","gap":"3px"}),
-        html.Div([html.Span(id="level-badge"),
-                  html.Button("⟲ RESET",id="reset-btn",style={"background":"transparent",
-                    "border":f"1px solid {C['cyan']}50","color":C["cyan"],"fontFamily":FM,
-                    "fontSize":"9px","letterSpacing":"1px","padding":"5px 14px","borderRadius":"6px","cursor":"pointer"})],
-                 style={"display":"flex","alignItems":"center","gap":"10px"}),
+        html.Div([
+            html.Span("empower",style={"fontFamily":FH,"fontSize":"22px","fontWeight":"800","color":C["cyan"]}),
+            html.Span("net",style={"fontFamily":FH,"fontSize":"22px","fontWeight":"800","color":C["text"]}),
+            html.Span("WEST BENGAL",style={"fontFamily":FM,"fontSize":"9px","color":C["muted"],"marginLeft":"10px",
+                "letterSpacing":"2px","border":f"1px solid {C['dim']}","padding":"2px 6px","borderRadius":"3px"}),
+        ],style={"display":"flex","alignItems":"baseline","gap":"1px"}),
+        html.Div([
+            html.Span("WB",style={"fontFamily":FM,"fontSize":"10px","color":C["cyan"]}),
+            html.Span(id="bc-dist",style={"fontFamily":FM,"fontSize":"10px","color":C["muted"]}),
+            html.Span(id="bc-block",style={"fontFamily":FM,"fontSize":"10px","color":C["muted"]}),
+        ],style={"display":"flex","alignItems":"center","gap":"3px"}),
+        html.Div([
+            html.Span(id="level-badge"),
+            html.Button("⟲ RESET",id="reset-btn",style={"background":"transparent",
+                "border":f"1px solid {C['cyan']}50","color":C["cyan"],"fontFamily":FM,
+                "fontSize":"9px","letterSpacing":"1px","padding":"5px 14px","borderRadius":"6px","cursor":"pointer"}),
+        ],style={"display":"flex","alignItems":"center","gap":"10px"}),
     ],style={"display":"flex","alignItems":"center","justifyContent":"space-between","maxWidth":"1700px","margin":"0 auto"})],
     style={"backgroundColor":C["surface"],"borderBottom":f"1px solid {C['border']}",
            "padding":"12px 28px","position":"sticky","top":"0","zIndex":"100"}),
 
+    # ── Body ──
     html.Div([
-        html.Div([kpi_card("kpi-shg","Active SHGs","—",C["emerald"],"👥"),
-                  kpi_card("kpi-users","Registered Users","—",C["cyan"],"👤"),
-                  kpi_card("kpi-train","Training Programs","—",C["amber"],"🎓"),
-                  kpi_card("kpi-safety","Safety Reports","—",C["rose"],"⚠️")],
-                 style={"display":"flex","gap":"14px","marginBottom":"18px"}),
+        html.Div([
+            kpi_card("kpi-shg","Active SHGs","—",C["emerald"],"👥"),
+            kpi_card("kpi-users","Registered Users","—",C["cyan"],"👤"),
+            kpi_card("kpi-train","Training Programs","—",C["amber"],"🎓"),
+            kpi_card("kpi-safety","Safety Reports","—",C["rose"],"⚠️"),
+        ],style={"display":"flex","gap":"14px","marginBottom":"18px"}),
 
         html.Div([
+            # Left — map
             html.Div([html.Div([
-                html.Div([html.Span("GEOGRAPHY",style={"fontFamily":FB,"fontSize":"9px","color":C["muted"],"letterSpacing":"2px","fontWeight":"600"}),
-                          html.Span(id="map-hint",style={"fontFamily":FM,"fontSize":"9px","color":C["blue"]})],
-                         style={"display":"flex","justifyContent":"space-between","marginBottom":"6px"}),
-                html.Div([html.Span("● SHGs",style={"color":C["emerald"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
-                          html.Span("▲ Safety",style={"color":C["rose"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
-                          html.Span("● Blocks",style={"color":C["cyan"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
-                          html.Span("● Villages",style={"color":C["violet"],"fontSize":"9px","fontFamily":FB})],
-                         style={"marginBottom":"8px"}),
+                html.Div([
+                    html.Span("GEOGRAPHY",style={"fontFamily":FB,"fontSize":"9px","color":C["muted"],"letterSpacing":"2px","fontWeight":"600"}),
+                    html.Span(id="map-hint",style={"fontFamily":FM,"fontSize":"9px","color":C["blue"]}),
+                ],style={"display":"flex","justifyContent":"space-between","marginBottom":"6px"}),
+                html.Div([
+                    html.Span("● SHGs",style={"color":C["emerald"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
+                    html.Span("▲ Safety",style={"color":C["rose"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
+                    html.Span("● Blocks",style={"color":C["cyan"],"fontSize":"9px","marginRight":"14px","fontFamily":FB}),
+                    html.Span("● Villages",style={"color":C["violet"],"fontSize":"9px","fontFamily":FB}),
+                ],style={"marginBottom":"8px"}),
                 dcc.Graph(id="map-visual",config={"displayModeBar":False,"scrollZoom":True},
-                          style={"height":"470px","borderRadius":"8px","overflow":"hidden"}),
+                          style={"height":"570px","borderRadius":"8px","overflow":"hidden"}),
             ],style=CARD)],style={"flex":"0 0 44%","minWidth":"0"}),
 
+            # Right — 2×2 charts + table
             html.Div([
+                # Row 1
                 html.Div([
-                    html.Div([dcc.Graph(id="jobs-chart",config={"displayModeBar":False},style={"height":"320px"})],style={**CARD,"flex":"0 0 60%"}),
-                    html.Div([dcc.Graph(id="skill-chart",config={"displayModeBar":False},style={"height":"260px"})],style={**CARD,"flex":"1"}),
+                    html.Div([dcc.Graph(id="treemap-chart",config={"displayModeBar":False},style={"height":"290px"})],
+                             style={**CARD,"flex":"0 0 57%"}),
+                    html.Div([dcc.Graph(id="polar-chart",config={"displayModeBar":False},style={"height":"290px"})],
+                             style={**CARD,"flex":"1"}),
                 ],style={"display":"flex","gap":"14px","marginBottom":"14px"}),
+                # Row 2
                 html.Div([
-                    html.Div([dcc.Graph(id="safety-chart",config={"displayModeBar":False},style={"height":"240px"})],style={**CARD,"flex":"1"}),
-                    # ── replaced training-chart with jobs-category-chart ──
-                    html.Div([dcc.Graph(id="jobs-category-chart",config={"displayModeBar":False},style={"height":"220px"})],style={**CARD,"flex":"1"}),
+                    html.Div([dcc.Graph(id="funnel-chart",config={"displayModeBar":False},style={"height":"290px"})],
+                             style={**CARD,"flex":"1"}),
+                    html.Div([dcc.Graph(id="lollipop-chart",config={"displayModeBar":False},style={"height":"290px"})],
+                             style={**CARD,"flex":"1"}),
                 ],style={"display":"flex","gap":"14px","marginBottom":"14px"}),
+                # Table
                 html.Div([
                     html.Div([
                         html.Button("👥 SHGs",id="tab-shgs-btn",n_clicks=0,className="tab-btn tab-active"),
@@ -565,24 +628,18 @@ def handle_drill(clickData,reset_n,state):
     if tid=="map-visual" and clickData:
         pt=clickData["points"][0]
         curve=pt.get("curveNumber",-1)
-
         if state["level"]=="state":
-            # ── FIX: only respond to choropleth (curve 0); scatter layers sit
-            #         on top and must NOT trigger a district drill ──
-            if curve==0:
+            if curve==0:  # choropleth only — scatter overlays must NOT trigger drill
                 district=pt.get("location","").strip()
                 if district and district in ALL_DISTRICTS:
                     bdf=get_blocks_for_district(district)
                     return {"level":"district","district":district,"block":None},bdf.to_dict("records")
-
         elif state["level"]=="district":
-            # Block bubbles are always trace 1; verify with customdata sentinel
             cd=pt.get("customdata",None)
             if cd and len(cd)>=2 and str(cd[0])=="BLOCK":
                 blk=str(cd[1]).strip()
                 if blk:
                     return {"level":"block","district":state["district"],"block":blk},[]
-
     return state,[]
 
 @app.callback(
@@ -601,40 +658,53 @@ def switch_tab(a,b,c,d):
     return m.get(tid,("tab-shgs",ON,OFF,OFF,OFF))
 
 @app.callback(
-    Output("map-visual","figure"),Output("jobs-chart","figure"),Output("skill-chart","figure"),
-    Output("safety-chart","figure"),Output("jobs-category-chart","figure"),       # ← was training-chart
-    Output("kpi-shg","children"),Output("kpi-users","children"),Output("kpi-train","children"),Output("kpi-safety","children"),
-    Output("bc-dist","children"),Output("bc-block","children"),Output("level-badge","children"),
-    Output("map-hint","children"),Output("table-container","children"),
+    Output("map-visual","figure"),
+    Output("treemap-chart","figure"),
+    Output("polar-chart","figure"),
+    Output("funnel-chart","figure"),
+    Output("lollipop-chart","figure"),
+    Output("kpi-shg","children"),Output("kpi-users","children"),
+    Output("kpi-train","children"),Output("kpi-safety","children"),
+    Output("bc-dist","children"),Output("bc-block","children"),
+    Output("level-badge","children"),Output("map-hint","children"),
+    Output("table-container","children"),
     Input("drill-state","data"),Input("blocks-store","data"),Input("active-tab","data"))
 def update_all(state,blocks_data,tab):
     lvl=state["level"]; dis=state.get("district"); blk=state.get("block")
-    if lvl=="state":    s,u,t,sf=get_state_kpis()
+
+    if lvl=="state":      s,u,t,sf=get_state_kpis()
     elif lvl=="district": s,u,t,sf=get_district_kpis(dis)
-    else:               s,u,t,sf=get_block_kpis(dis,blk)
+    else:                 s,u,t,sf=get_block_kpis(dis,blk)
+
     if lvl=="state":
-        shg_d,usr_d,trn_d,sfe_t=get_all_district_stats()
-        mfig=make_state_map(shg_d,usr_d,trn_d,sfe_t)
+        shg_d,usr_d,trn_d,_=get_all_district_stats()
+        mfig=make_state_map(shg_d,usr_d,trn_d,sf)
     elif lvl=="district":
         bdf=pd.DataFrame(blocks_data) if blocks_data else get_blocks_for_district(dis)
         mfig=make_district_map(dis,bdf)
     else:
         vdf=get_villages_for_block(dis,blk)
         mfig=make_block_map(dis,blk,vdf)
+
     bmap={"state":(C["cyan"],"STATE VIEW"),"district":(C["amber"],"DISTRICT"),"block":(C["emerald"],"BLOCK")}
     bc,bl=bmap[lvl]
     badge=html.Span(bl,style={"fontFamily":FM,"fontSize":"8px","letterSpacing":"1.5px","color":bc,
         "border":f"1px solid {bc}50","backgroundColor":f"{bc}10","padding":"3px 10px","borderRadius":"4px"})
     hints={"state":"Hover for stats · Click district choropleth to drill in",
            "district":"Click a block bubble to drill in","block":"Village-level view"}
-    return (mfig,
-            make_jobs_chart(dis,blk),
-            make_skill_chart(dis,blk),
-            make_safety_chart(dis),
-            make_jobs_category_chart(dis,blk),     # ← replaces make_training_chart
-            f"{s:,}",f"{u:,}",f"{t:,}",f"{sf:,}",
-            f" › {dis}" if dis else "","" if not blk else f" › {blk}",
-            badge,hints[lvl],make_table(tab,state))
+
+    return (
+        mfig,
+        make_treemap_chart(dis, blk),
+        make_polar_chart(dis, blk),
+        make_funnel_chart(dis),
+        make_lollipop_chart(dis, blk),
+        f"{s:,}", f"{u:,}", f"{t:,}", f"{sf:,}",
+        f" › {dis}" if dis else "",
+        "" if not blk else f" › {blk}",
+        badge, hints[lvl],
+        make_table(tab, state),
+    )
 
 if __name__=="__main__":
     app.run(debug=True,port=8050,host="0.0.0.0")
