@@ -15,51 +15,54 @@ if raw_url.startswith("postgres://"):
 engine = create_engine(raw_url)
 
 @tool("submit_safety_report")
-def submit_safety_report(user_id: str, description: str, category: str, lat: float, lon: float):
+def submit_safety_report(user_id: str, description: str, category: str, district: str, block: str, village: str):
     """
     Logs a safety complaint in English and automatically updates the safety score 
-    of nearby vetted job sites (within 500m).
+     of all vetted job sites in the reporter's specific village.
     """
     
-    # 1. SQL to insert the report (Description is pre-translated to English by the node)
+    # 1. SQL to insert the report using Hierarchy instead of lat/lon
     insert_query = text("""
-        INSERT INTO safety_reports (user_id, description, category, lat, lon, reported_at)
-        VALUES (:uid, :desc, :cat, :lat, :lon, CURRENT_TIMESTAMP)
+        INSERT INTO safety_reports (user_id, description, category, district, block, village, reported_at)
+        VALUES (:uid, :desc, :cat, :dist, :block, :vill, CURRENT_TIMESTAMP)
         RETURNING id;
     """)
     
-    # 2. SQL to penalize nearby job sites
-    # Reduces safety_score by 0.5. Score is capped at a minimum of 1.0.
+    # 2. SQL to penalize job sites in the same Village/Block
+    # This ensures your "Swarm" penalizes the right local area without needing GPS.
     update_score_query = text("""
         UPDATE vetted_jobs
         SET safety_score = GREATEST(1.0, safety_score - 0.5)
-        WHERE ST_DWithin(location_geog, ST_MakePoint(:lon, :lat)::geography, 500);
+        WHERE village = :vill AND block = :block;
     """)
     
     try:
-        # Use a transaction block to ensure both operations succeed or both fail
         with engine.begin() as conn:
             # Execute the insert
             result = conn.execute(insert_query, {
                 "uid": user_id, 
                 "desc": description, 
                 "cat": category, 
-                "lat": lat, 
-                "lon": lon
+                "dist": district,
+                "block": block,
+                "vill": village
             })
             report_id = result.fetchone()[0]
             
-            # Execute the score update
-            update_result = conn.execute(update_score_query, {"lat": lat, "lon": lon})
+            # Execute the score update for that specific village/block
+            update_result = conn.execute(update_score_query, {
+                "vill": village,
+                "block": block
+            })
             affected_sites = update_result.rowcount
             
-            logger.info(f"🚩 Safety Report #{report_id} logged in English. {affected_sites} nearby sites penalized.")
+            logger.info(f"🚩 Safety Report #{report_id} logged. {affected_sites} sites in {village} penalized.")
             
             return {
                 "status": "success",
                 "report_id": report_id,
                 "sites_impacted": affected_sites,
-                "message": f"Report successfully filed. Safety scores for {affected_sites} nearby work sites have been adjusted."
+                "message": f"Report filed for {village}. Safety scores for {affected_sites} local sites adjusted."
             }
 
     except Exception as e:
