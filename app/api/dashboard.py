@@ -22,9 +22,9 @@ def fetch(sql, params=None):
 def fetch_one(sql, params=None):
     r=fetch(sql,params); return r[0] if r else {}
 
-C=dict(bg="#080C12",surface="#0D1219",card="#111827",border="rgba(255,255,255,0.07)",
+C=dict(bg="#05080F",surface="#080D16",card="#0C1220",border="rgba(255,255,255,0.08)",
        cyan="#00E5FF",blue="#2979FF",emerald="#00E676",amber="#FFB300",rose="#FF4081",
-       violet="#BB86FC",text="#E2EAF4",muted="#64748B",dim="#334155")
+       violet="#BB86FC",text="#E2EAF4",muted="#64748B",dim="#1E2D45")
 FB="'DM Sans', sans-serif"; FM="'JetBrains Mono', monospace"; FH="'Syne', sans-serif"
 GFONTS=("https://fonts.googleapis.com/css2?family=Syne:wght@700;800&"
         "family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap")
@@ -164,9 +164,10 @@ def get_occupation_dist(d=None, b=None):
 def mlay(lat,lon,zoom):
     return dict(mapbox=dict(style="carto-darkmatter",center=dict(lat=lat,lon=lon),zoom=zoom),
                 margin=dict(l=0,r=0,t=0,b=0),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
-                legend=dict(bgcolor="rgba(8,12,18,0.92)",bordercolor=C["border"],borderwidth=1,
-                            font=dict(color=C["muted"],size=10,family=FB),x=0.01,y=0.98,itemsizing="constant"),
-                hoverlabel=dict(bgcolor="#0D1219",bordercolor=C["cyan"],font_color=C["text"],font_family=FB,font_size=12))
+                legend=dict(bgcolor="rgba(5,8,15,0.95)",bordercolor="rgba(0,229,255,0.2)",borderwidth=1,
+                            font=dict(color="#64748B",size=10,family=FB),x=0.01,y=0.98,itemsizing="constant"),
+                hoverlabel=dict(bgcolor="#050810",bordercolor=C["cyan"],font_color=C["text"],
+                                font_family=FB,font_size=12))
 
 def make_state_map(shg_d,usr_d,trn_d,sfe_total):
     z=[shg_d.get(d,0) for d in ALL_DISTRICTS]
@@ -184,8 +185,7 @@ def make_state_map(shg_d,usr_d,trn_d,sfe_total):
                        "──────────────<br>"
                        "👥 SHGs: <b>%{customdata[0]:,}</b><br>"
                        "👤 Users: <b>%{customdata[1]:,}</b><br>"
-                       "🎓 Training: <b>%{customdata[2]:,}</b><br>"
-                       "<i style='color:#64748B'>Click to drill in →</i><extra></extra>")))
+                       "🎓 Training: <b>%{customdata[2]:,}</b><extra></extra>")))
     rows=get_shgs_geo()
     if rows:
         df=pd.DataFrame(rows).dropna(subset=["lat","lon"])
@@ -236,8 +236,7 @@ def make_district_map(district,blocks_df):
             name="🔷 Blocks",customdata=cd,
             hovertemplate=("<b>%{customdata[1]}</b><br>"
                            "👥 SHGs: <b>%{customdata[2]}</b><br>"
-                           "👤 Users: <b>%{customdata[3]}</b><br>"
-                           "<i style='color:#64748B'>Click to drill in →</i><extra></extra>")))
+                           "👤 Users: <b>%{customdata[3]}</b><extra></extra>")))
     rows=get_shgs_geo(d=district)
     if rows:
         df2=pd.DataFrame(rows).dropna(subset=["lat","lon"])
@@ -288,14 +287,18 @@ def make_block_map(district,block,vdf):
     return fig
 
 # ── CHART BASE ────────────────────────────────────────────────────────────────
-def cbase(title, h):
+def cbase(title, h, accent=None):
+    ac = accent or C["cyan"]
     return dict(
         title=dict(text=f"<b>{title}</b>",
-                   font=dict(color=C["muted"], size=10, family=FB), x=0.01, y=0.97),
+                   font=dict(color="#94A3B8", size=10, family=FB), x=0.01, y=0.97),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=h,
-        hoverlabel=dict(bgcolor="#0D1219", font_color=C["text"], font_family=FB, font_size=12),
+        hoverlabel=dict(
+            bgcolor="#080D16", font_color=C["text"], font_family=FB, font_size=12,
+            bordercolor=ac,
+        ),
         font=dict(family=FB, color=C["muted"]),
-        margin=dict(l=10, r=10, t=34, b=10),
+        margin=dict(l=10, r=10, t=36, b=10),
     )
 
 # ── CHART 1 ── TREEMAP: Vetted Jobs by Category ───────────────────────────────
@@ -314,18 +317,19 @@ def make_treemap_chart(d=None, b=None):
         parents=[""] * len(df),
         values=df["cnt"].tolist(),
         customdata=df["pct"].tolist(),
-        texttemplate="<b>%{label}</b><br>%{value:,}<br>%{customdata}%",
-        textfont=dict(family=FB, size=11, color=C["text"]),
+        texttemplate="<b>%{label}</b><br><span style='font-size:13px'>%{value:,}</span><br><span style='opacity:0.7'>%{customdata}%</span>",
+        textfont=dict(family=FB, size=11, color="#FFFFFF"),
         hovertemplate="<b>%{label}</b><br>Jobs: <b>%{value:,}</b><br>Share: <b>%{customdata}%</b><extra></extra>",
         marker=dict(
             colors=colors,
-            line=dict(width=2, color=C["bg"]),
-            pad=dict(t=6, l=4, r=4, b=4),
+            line=dict(width=2.5, color=C["bg"]),
+            pad=dict(t=8, l=5, r=5, b=5),
+            cornerradius=4,
         ),
         pathbar_visible=False,
     ))
-    layout = cbase("VETTED JOBS BY CATEGORY", 290)
-    layout.update(margin=dict(l=4, r=4, t=34, b=4))
+    layout = cbase("VETTED JOBS BY CATEGORY", 290, C["amber"])
+    layout.update(margin=dict(l=4, r=4, t=36, b=4))
     fig.update_layout(**layout)
     return fig
 
@@ -345,22 +349,22 @@ def make_polar_chart(d=None, b=None):
         fig.add_trace(go.Barpolar(
             r=[int(row["cnt"])],
             theta=[theta[i]],
-            width=[max(360 / n - 4, 10)],
+            width=[max(360 / n - 3, 12)],
             name=str(row["cat"]),
             marker_color=colors[i],
             marker_line_color=C["bg"],
-            marker_line_width=1.5,
-            opacity=0.88,
+            marker_line_width=2,
+            opacity=0.92,
             hovertemplate=f"<b>{row['cat']}</b><br>SHGs: <b>{int(row['cnt']):,}</b><extra></extra>",
         ))
 
-    layout = cbase("SHG CATEGORIES — POLAR", 290)
+    layout = cbase("SHG CATEGORIES — POLAR", 290, C["violet"])
     layout.update(
         polar=dict(
             bgcolor="rgba(0,0,0,0)",
             angularaxis=dict(
-                tickfont=dict(color=C["muted"], size=8, family=FB),
-                linecolor=C["border"], gridcolor=C["border"],
+                tickfont=dict(color="#94A3B8", size=8, family=FB),
+                linecolor="rgba(255,255,255,0.08)", gridcolor="rgba(255,255,255,0.06)",
                 tickvals=theta,
                 ticktext=df["cat"].str[:13].tolist(),
                 direction="clockwise", rotation=90,
@@ -368,12 +372,13 @@ def make_polar_chart(d=None, b=None):
             radialaxis=dict(
                 visible=True,
                 tickfont=dict(color=C["dim"], size=7, family=FM),
-                gridcolor="rgba(255,255,255,0.05)",
+                gridcolor="rgba(187,134,252,0.12)",
                 linecolor="rgba(0,0,0,0)",
+                showticklabels=False,
             ),
         ),
         showlegend=False,
-        margin=dict(l=50, r=50, t=44, b=44),
+        margin=dict(l=55, r=55, t=46, b=46),
     )
     fig.update_layout(**layout)
     return fig
@@ -387,7 +392,7 @@ def make_funnel_chart(d=None):
     df["cnt"] = pd.to_numeric(df["cnt"], errors="coerce").fillna(0).astype(int)
     df = df.sort_values("cnt", ascending=False)
 
-    rose_scale = ["#FF4081","#E91E63","#C2185B","#880E4F","#5C0D30","#3a0820","#250513","#110209"]
+    rose_scale = ["#FF4081","#E91E63","#C2185B","#9C1045","#6d0830","#42061e","#250513","#110209"]
     bar_colors = [rose_scale[min(i, len(rose_scale)-1)] for i in range(len(df))]
 
     fig = go.Figure(go.Funnel(
@@ -395,15 +400,15 @@ def make_funnel_chart(d=None):
         x=df["cnt"].tolist(),
         textposition="inside",
         textinfo="value+percent initial",
-        textfont=dict(family=FM, size=10, color=C["text"]),
+        textfont=dict(family=FM, size=10, color="#FFFFFF"),
         hovertemplate="<b>%{y}</b><br>Reports: <b>%{x:,}</b><br>%{percentInitial} of total<extra></extra>",
-        marker=dict(color=bar_colors, line=dict(width=1.5, color=C["bg"])),
-        connector=dict(line=dict(color=C["border"], width=1, dash="dot")),
-        opacity=0.92,
+        marker=dict(color=bar_colors, line=dict(width=2, color=C["bg"])),
+        connector=dict(line=dict(color="rgba(255,64,129,0.25)", width=1.5, dash="dot")),
+        opacity=0.95,
     ))
-    layout = cbase("SAFETY INCIDENTS — FUNNEL", 290)
+    layout = cbase("SAFETY INCIDENTS — FUNNEL", 290, C["rose"])
     layout.update(
-        margin=dict(l=10, r=10, t=34, b=10),
+        margin=dict(l=10, r=10, t=36, b=10),
         xaxis=dict(visible=False),
         yaxis=dict(tickfont=dict(color="#94A3B8", size=10, family=FB)),
     )
@@ -420,13 +425,13 @@ def make_lollipop_chart(d=None, b=None):
     df = df.sort_values("cnt", ascending=True)
 
     fig = go.Figure()
-    # Stem lines (one scatter per row to keep them on y=label)
+    # Stem lines
     for _, row in df.iterrows():
         fig.add_trace(go.Scatter(
             x=[0, int(row["cnt"])],
             y=[row["occ"], row["occ"]],
             mode="lines",
-            line=dict(color="rgba(0,229,255,0.15)", width=1.5),
+            line=dict(color="rgba(0,229,255,0.22)", width=2),
             showlegend=False, hoverinfo="skip",
         ))
     # Dots + labels
@@ -435,25 +440,25 @@ def make_lollipop_chart(d=None, b=None):
         y=df["occ"].tolist(),
         mode="markers+text",
         marker=dict(
-            size=14,
+            size=16,
             color=df["cnt"].tolist(),
-            colorscale=[[0,"#003550"],[0.4,"#0077cc"],[1,"#00E5FF"]],
+            colorscale=[[0,"#002a42"],[0.35,"#005580"],[0.7,"#0099cc"],[1,"#00E5FF"]],
             showscale=False,
-            line=dict(width=2, color=C["bg"]),
+            line=dict(width=2.5, color=C["bg"]),
         ),
         text=df["cnt"].apply(lambda v: f"{v:,}"),
         textposition="middle right",
-        textfont=dict(color=C["muted"], size=9, family=FM),
+        textfont=dict(color="#94A3B8", size=9, family=FM),
         hovertemplate="<b>%{y}</b><br>Users: <b>%{x:,}</b><extra></extra>",
         showlegend=False,
         cliponaxis=False,
     ))
 
-    layout = cbase("USER OCCUPATIONS — TOP 10", 290)
+    layout = cbase("USER OCCUPATIONS — TOP 10", 290, C["cyan"])
     mx = int(df["cnt"].max()) if len(df) else 1
     layout.update(
-        margin=dict(l=10, r=70, t=34, b=10),
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-mx*0.03, mx*1.28]),
+        margin=dict(l=10, r=74, t=36, b=10),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-mx*0.03, mx*1.30]),
         yaxis=dict(tickfont=dict(color="#94A3B8", size=10, family=FB),
                    gridcolor="rgba(0,0,0,0)", automargin=True),
     )
@@ -495,19 +500,50 @@ def make_table(tab,state):
         page_size=8,style_table={"borderRadius":"8px","overflow":"hidden","overflowX":"auto"})
 
 # ── LAYOUT ────────────────────────────────────────────────────────────────────
-CARD={"backgroundColor":C["card"],"borderRadius":"12px","border":f"1px solid {C['border']}","padding":"16px 18px"}
+CARD={
+    "background":"linear-gradient(145deg,#0D1525,#080D16)",
+    "borderRadius":"14px",
+    "border":"1px solid rgba(255,255,255,0.07)",
+    "padding":"16px 18px",
+    "boxShadow":"0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
+}
+
+def card_with_accent(accent):
+    """Card with a glowing top-edge accent line."""
+    return {
+        **CARD,
+        "borderTop": f"1px solid {accent}60",
+        "boxShadow": f"0 4px 28px rgba(0,0,0,0.55), 0 0 0 0 transparent, inset 0 1px 0 {accent}30",
+    }
 
 def kpi_card(kid,label,value,accent,icon):
     return html.Div([
-        html.Div(icon,style={"fontSize":"20px","width":"44px","height":"44px","borderRadius":"10px",
+        html.Div(icon,style={
+            "fontSize":"22px","width":"46px","height":"46px","borderRadius":"12px",
             "display":"flex","alignItems":"center","justifyContent":"center","flexShrink":"0",
-            "background":f"linear-gradient(135deg,{accent}25,{accent}08)","border":f"1px solid {accent}40","marginRight":"14px"}),
+            "background":f"linear-gradient(135deg,{accent}30,{accent}08)",
+            "border":f"1px solid {accent}50","marginRight":"16px",
+            "boxShadow":f"0 0 18px {accent}20",
+        }),
         html.Div([
-            html.Div(label,style={"color":C["muted"],"fontSize":"9px","textTransform":"uppercase","letterSpacing":"1.5px","fontFamily":FB,"fontWeight":"600","marginBottom":"3px"}),
-            html.Div(value,id=kid,style={"color":C["text"],"fontSize":"22px","fontWeight":"700","fontFamily":FM,"lineHeight":"1"}),
+            html.Div(label,style={
+                "color":C["muted"],"fontSize":"9px","textTransform":"uppercase",
+                "letterSpacing":"1.8px","fontFamily":FB,"fontWeight":"600","marginBottom":"5px",
+            }),
+            html.Div(value,id=kid,style={
+                "color":C["text"],"fontSize":"24px","fontWeight":"700","fontFamily":FM,
+                "lineHeight":"1","textShadow":f"0 0 20px {accent}55",
+            }),
         ])
-    ],style={"display":"flex","alignItems":"center","backgroundColor":C["card"],"padding":"18px 20px",
-             "borderRadius":"12px","border":f"1px solid {C['border']}","boxShadow":f"0 0 24px {accent}12","flex":"1"})
+    ],style={
+        "display":"flex","alignItems":"center",
+        "background":f"linear-gradient(135deg,{accent}0D 0%,#0C1220 60%)",
+        "padding":"20px 22px","borderRadius":"14px",
+        "border":f"1px solid {accent}28",
+        "borderTop":f"1px solid {accent}55",
+        "boxShadow":f"0 4px 28px rgba(0,0,0,0.5), 0 0 40px {accent}08",
+        "flex":"1","position":"relative","overflow":"hidden",
+    })
 
 app=dash.Dash(__name__,external_stylesheets=[dbc.themes.BOOTSTRAP,GFONTS],
               suppress_callback_exceptions=True,title="EmpowerNet · WB")
@@ -536,7 +572,9 @@ app.layout=html.Div([
                 "fontSize":"9px","letterSpacing":"1px","padding":"5px 14px","borderRadius":"6px","cursor":"pointer"}),
         ],style={"display":"flex","alignItems":"center","gap":"10px"}),
     ],style={"display":"flex","alignItems":"center","justifyContent":"space-between","maxWidth":"1700px","margin":"0 auto"})],
-    style={"backgroundColor":C["surface"],"borderBottom":f"1px solid {C['border']}",
+    style={"background":"linear-gradient(180deg,#080D16 0%,#05080F 100%)",
+           "borderBottom":f"1px solid rgba(0,229,255,0.15)",
+           "boxShadow":"0 2px 30px rgba(0,0,0,0.6), 0 1px 0 rgba(0,229,255,0.08)",
            "padding":"12px 28px","position":"sticky","top":"0","zIndex":"100"}),
 
     # ── Body ──
@@ -563,23 +601,23 @@ app.layout=html.Div([
                 ],style={"marginBottom":"8px"}),
                 dcc.Graph(id="map-visual",config={"displayModeBar":False,"scrollZoom":True},
                           style={"height":"570px","borderRadius":"8px","overflow":"hidden"}),
-            ],style=CARD)],style={"flex":"0 0 44%","minWidth":"0"}),
+            ],style=card_with_accent(C["cyan"]))],style={"flex":"0 0 44%","minWidth":"0"}),
 
             # Right — 2×2 charts + table
             html.Div([
                 # Row 1
                 html.Div([
                     html.Div([dcc.Graph(id="treemap-chart",config={"displayModeBar":False},style={"height":"290px"})],
-                             style={**CARD,"flex":"0 0 57%"}),
+                             style={**card_with_accent(C["amber"]),"flex":"0 0 57%"}),
                     html.Div([dcc.Graph(id="polar-chart",config={"displayModeBar":False},style={"height":"290px"})],
-                             style={**CARD,"flex":"1"}),
+                             style={**card_with_accent(C["violet"]),"flex":"1"}),
                 ],style={"display":"flex","gap":"14px","marginBottom":"14px"}),
                 # Row 2
                 html.Div([
                     html.Div([dcc.Graph(id="funnel-chart",config={"displayModeBar":False},style={"height":"290px"})],
-                             style={**CARD,"flex":"1"}),
+                             style={**card_with_accent(C["rose"]),"flex":"1"}),
                     html.Div([dcc.Graph(id="lollipop-chart",config={"displayModeBar":False},style={"height":"290px"})],
-                             style={**CARD,"flex":"1"}),
+                             style={**card_with_accent(C["cyan"]),"flex":"1"}),
                 ],style={"display":"flex","gap":"14px","marginBottom":"14px"}),
                 # Table
                 html.Div([
@@ -591,7 +629,7 @@ app.layout=html.Div([
                     ],style={"display":"flex","gap":"6px","marginBottom":"14px"}),
                     dcc.Store(id="active-tab",data="tab-shgs"),
                     html.Div(id="table-container"),
-                ],style=CARD),
+                ],style=card_with_accent(C["blue"])),
             ],style={"flex":"1","minWidth":"0","display":"flex","flexDirection":"column"}),
         ],style={"display":"flex","gap":"16px","alignItems":"flex-start"}),
     ],style={"maxWidth":"1700px","margin":"0 auto","padding":"22px 28px"}),
@@ -601,15 +639,63 @@ app.index_string='''<!DOCTYPE html>
 <html><head>{%metas%}<title>EmpowerNet · West Bengal</title>{%favicon%}{%css%}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#080C12;overflow-x:hidden}
+body{
+  background:#05080F;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%,rgba(0,229,255,0.04) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%,rgba(41,121,255,0.05) 0%,transparent 55%);
+  overflow-x:hidden;
+  min-height:100vh;
+}
 ::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:#0D1219}
-::-webkit-scrollbar-thumb{background:#1e2d40;border-radius:3px}
-.tab-btn{background:transparent;border:1px solid rgba(255,255,255,0.08);color:#64748B;
-  font-family:'DM Sans',sans-serif;font-size:9px;font-weight:600;letter-spacing:1.5px;
-  text-transform:uppercase;padding:6px 16px;border-radius:7px;cursor:pointer;transition:all .2s}
-.tab-btn:hover{border-color:#00E5FF44;color:#94A3B8}
-.tab-active{border-color:#00E5FF!important;color:#00E5FF!important;background:rgba(0,229,255,0.08)!important}
+::-webkit-scrollbar-track{background:#05080F}
+::-webkit-scrollbar-thumb{background:#1a2840;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#253a55}
+
+/* Tab buttons */
+.tab-btn{
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+  color:#4B5E78;
+  font-family:'DM Sans',sans-serif;font-size:9px;font-weight:600;
+  letter-spacing:1.5px;text-transform:uppercase;
+  padding:7px 18px;border-radius:8px;cursor:pointer;
+  transition:all .2s ease;
+  position:relative;overflow:hidden;
+}
+.tab-btn::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.04),transparent);
+  opacity:0;transition:opacity .2s;
+}
+.tab-btn:hover{
+  border-color:rgba(0,229,255,0.3);
+  color:#94A3B8;
+  background:rgba(0,229,255,0.05);
+}
+.tab-btn:hover::before{opacity:1}
+.tab-active{
+  border-color:rgba(0,229,255,0.55)!important;
+  color:#00E5FF!important;
+  background:linear-gradient(135deg,rgba(0,229,255,0.12),rgba(0,229,255,0.04))!important;
+  box-shadow:0 0 18px rgba(0,229,255,0.15), inset 0 1px 0 rgba(0,229,255,0.2)!important;
+}
+
+/* KPI card glow pulse on hover */
+.kpi-hover:hover{
+  box-shadow:0 6px 40px rgba(0,0,0,0.6)!important;
+  transform:translateY(-1px);
+  transition:all .25s ease;
+}
+
+/* Chart container inner breathing shadow */
+.dash-graph{
+  border-radius:8px;
+  overflow:hidden;
+}
+
+/* Plotly modebar hide */
+.modebar{display:none!important}
 </style>
 </head><body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body></html>'''
 
