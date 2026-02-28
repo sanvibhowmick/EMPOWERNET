@@ -1,89 +1,107 @@
+# app/tools/jobs.py
+
 import os
 import logging
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from langchain_core.tools import tool
-from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Database Connection
-raw_url = os.getenv("DATABASE_URL", "")
-if raw_url.startswith("postgres://"):
-    raw_url = raw_url.replace("postgres://", "postgresql://", 1)
-
-engine = create_engine(raw_url)
+DB_URL = os.getenv("DATABASE_URL", "")
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
 @tool("match_local_jobs")
-def match_local_jobs(skills: str, lat: float, lon: float):
+def match_local_jobs(skills: str, district: str, block: str, village: str):
     """
-    Finds job openings within 10km of the user based on skills and safety.
-    Prioritizes jobs with higher safety scores (safety_score column).
-    If no local jobs exist, it finds the closest safe match in the state.
+    Finds verified job openings for unorganised sector workers.
+    Priority 1: Exact village match.
+    Priority 2: Same block.
+    Priority 3: Same district or skill keyword match.
+    Only returns active jobs.
     """
-    
-    # Clean up input
-    search_term = skills if skills and skills.lower() != "none" else "labor"
 
-    # SQL Logic:
-    # 1. 'local_jobs' tries the strict 10km radius + Safety Filter (score >= 2.0).
-    # 2. 'fallback_jobs' only runs if local_jobs is empty.
-    # 3. We use a safety weighted ranking: (safety_score * 2) - (distance / 5)
-    query = text("""
-        WITH local_jobs AS (
-            SELECT title, company, contact_person, safety_score,
-                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) / 1000 as dist_km,
-                   'Local' as source
-            FROM vetted_jobs
-            WHERE ST_DWithin(location_geog, ST_MakePoint(:lon, :lat)::geography, 10000)
-            AND (title ILIKE :skills OR description ILIKE :skills)
-            AND safety_score >= 2.0 -- Filter out dangerous workplaces
-        ),
-        fallback_jobs AS (
-            SELECT title, company, contact_person, safety_score,
-                   ST_Distance(location_geog, ST_MakePoint(:lon, :lat)::geography) / 1000 as dist_km,
-                   'Statewide' as source
-            FROM vetted_jobs
-            WHERE (title ILIKE :skills OR description ILIKE :skills)
-            AND safety_score >= 3.0 -- Fallback only shows high-safety options
-            AND NOT EXISTS (SELECT 1 FROM local_jobs)
-            ORDER BY dist_km ASC
-            LIMIT 1
-        )
-        SELECT * FROM local_jobs
-        UNION ALL
-        SELECT * FROM fallback_jobs
-        ORDER BY safety_score DESC, dist_km ASC;
-    """)
-    
+    search_term = f"%{skills}%" if skills and str(skills).lower() != "none" else "%"
+
+    query = """
+        SELECT
+            job_title,
+            description,
+            category,
+            district,
+            block,
+            gram_panchayat,
+            village,
+            pay_rate_daily,
+            duration_days,
+            start_date,
+            ngo_partner_name,
+            contact_person,
+            contact_number,
+            safety_score
+        FROM vetted_jobs
+        WHERE
+            is_active = TRUE
+            AND (
+                village  = %s
+                OR block = %s
+                OR district = %s
+                OR job_title  ILIKE %s
+                OR category   ILIKE %s
+                OR description ILIKE %s
+            )
+        ORDER BY
+            (CASE
+                WHEN village  = %s THEN 1
+                WHEN block    = %s THEN 2
+                WHEN district = %s THEN 3
+                ELSE 4
+            END) ASC,
+            safety_score DESC,
+            created_at DESC
+        LIMIT 10;
+    """
+
     try:
-        with engine.connect() as conn:
-            res = conn.execute(query, {
-                "skills": f"%{search_term}%", 
-                "lat": lat, 
-                "lon": lon
-            }).fetchall()
-            
+        conn = psycopg2.connect(DB_URL)
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (
+                village, block, district,                   # WHERE location
+                search_term, search_term, search_term,      # WHERE skills
+                village, block, district,                   # ORDER BY priority
+            ))
+            res = cur.fetchall()
+
             if not res:
-                return f"I couldn't find any safe jobs matching '{search_term}' right now."
+                return (
+                    f"Nomoskar! I couldn't find any verified jobs in "
+                    f"{village} or {block} right now."
+                )
 
             results = []
             for r in res:
-                # We normalize the safety score into a user-friendly rating
-                safety_rating = "Excellent" if r[3] >= 4.5 else "Good" if r[3] >= 3.5 else "Average"
-                
+                loc_parts = [p for p in [r["village"], r["gram_panchayat"], r["block"]] if p]
                 results.append({
-                    "job": r[0],
-                    "org": r[1],
-                    "contact": r[2],
-                    "safety_score": f"{r[3]}/5",
-                    "safety_label": safety_rating,
-                    "distance_km": round(r[4], 1),
-                    "match_type": r[5]
+                    "job_title":   r["job_title"],
+                    "sector":      r["category"],
+                    "description": r["description"] or "N/A",
+                    "pay":         f"₹{r['pay_rate_daily']} per day" if r["pay_rate_daily"] else "N/A",
+                    "duration":    f"{r['duration_days']} days" if r["duration_days"] else "N/A",
+                    "start_date":  str(r["start_date"]) if r["start_date"] else "Immediate",
+                    "location":    ", ".join(loc_parts) or r["district"],
+                    "verified_by": r["ngo_partner_name"] or "N/A",
+                    "contact":     f"{r['contact_person']} ({r['contact_number']})" if r["contact_person"] else "N/A",
+                    "safety_score": r["safety_score"],
                 })
-            
+
             return results
 
     except Exception as e:
-        logger.error(f"❌ Safety-Jobs Tool Error: {e}")
-        return f"Database error during job search: {str(e)}"
+        logger.error(f"❌ Vetted Jobs Tool Error: {e}")
+        return "I'm having a little trouble looking at the job list right now. Please try again in a moment."
+    finally:
+        if "conn" in locals():
+            conn.close()

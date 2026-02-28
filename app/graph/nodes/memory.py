@@ -1,81 +1,79 @@
+# app/graph/nodes/memory.py
+
 import logging
 from typing import Optional
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
 from app.graph.state import AgentState
-
-# Tools
 from app.tools.memory import upsert_user_profile, get_user_context
-from app.tools.spatial import get_lat_lon_from_name, decode_location_from_coordinates
 
 logger = logging.getLogger(__name__)
 
-class UserFacts(BaseModel):
-    """Schema for extracting user details. All text fields should be in English."""
-    name: Optional[str] = Field(None, description="User's name in English characters")
-    language: Optional[str] = Field(None, description="The language the user is speaking (e.g., Bengali)")
-    skills: Optional[str] = Field(None, description="User's professional skills translated to English")
-    location: Optional[str] = Field(None, description="Village or city name translated to English")
+# 1. Define the Schema for AI Extraction
+class ProfileExtraction(BaseModel):
+    """Extracted worker profile information."""
+    full_name: Optional[str] = Field(None, description="The user's name")
+    district: Optional[str] = Field(None, description="District in UPPERCASE English")
+    block: Optional[str] = Field(None, description="Block in UPPERCASE English")
+    village: Optional[str] = Field(None, description="Village in UPPERCASE English")
+    primary_occupation: Optional[str] = Field(None, description="Job/Skill name")
+    preferred_lang: str = Field(
+        "Bengali", 
+        description="Detected language of the message: 'Bengali' or 'English'"
+    )
 
 def memory_node(state: AgentState):
+    """
+    The Memory specialist: Detects language and extracts location/skills.
+    Uses Structured Output to prevent JSON parsing crashes.
+    """
     user_id = state.get("user_id")
     messages = state.get("messages", [])
     last_msg = messages[-1].content if messages else ""
-    
-    # 1. LOAD PERSISTED CONTEXT (Data in DB is English)
-    db_data = get_user_context(str(user_id)) or {}
-    
-    # 2. AI FACT EXTRACTION & TRANSLATION
-    # We force the LLM to translate everything it finds into English for the DB
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0).with_structured_output(UserFacts)
-    extract_prompt = (
-        f"Analyze this message: '{last_msg}'\n"
-        "Identify the user's name, skills, and location. "
-        "IMPORTANT: Translate all extracted info (skills, location, name) into ENGLISH "
-        "regardless of the language used in the message."
-    )
-    new_facts = llm.invoke(extract_prompt)
-    
-    # 3. LANGUAGE LOGIC (Detect but don't translate the 'language' label)
-    # This stays in the state so the Writer knows the user's preference
-    detected_lang = new_facts.language or db_data.get("preferred_lang") or "Bengali"
-    script_pref = "Native" if detected_lang != "English" else "English"
 
-    # 4. COORDINATE LOGIC (Using the English location name)
-    lat = db_data.get("lat") or state.get("lat")
-    lon = db_data.get("lon") or state.get("lon")
-    location_name = new_facts.location or db_data.get("location_name") or state.get("location_name")
-
-    if new_facts.location:
-        coord_str = get_lat_lon_from_name.invoke({"location_name": new_facts.location})
-        if coord_str and "None" not in coord_str:
-            try:
-                lat, lon = map(float, coord_str.split(","))
-            except: pass
+    # A. Load existing profile to prevent overwriting known data
+    existing_profile = get_user_context(user_id) or {}
     
-    # 5. PERSIST TO DATABASE (Strictly English)
-    current_name = new_facts.name or db_data.get("name")
-    current_skills = new_facts.skills or db_data.get("skills")
-
-    upsert_user_profile(
-        phone_number=str(user_id),
-        name=current_name,
-        language=detected_lang, # Label (e.g., 'Bengali') is stored in English
-        skills=current_skills,  # e.g., 'Nurse' instead of 'সেবিকা'
-        lat=lat,
-        lon=lon
-    )
+    # B. AI Extraction using Structured Output
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    structured_llm = llm.with_structured_output(ProfileExtraction)
     
-    # 6. UPDATE GLOBAL STATE
-    # We return English facts for the Supervisor/Specialists, 
-    # but the language pref for the Writer.
-    return {
-        "user_name": current_name,
-        "preferred_lang": detected_lang,
-        "preferred_script": script_pref,
-        "user_skills": current_skills,
-        "location_name": location_name,
-        "lat": lat,
-        "lon": lon,
-        "next_agent": "supervisor"
-    }
+    try:
+        # The AI now returns a 'ProfileExtraction' object directly
+        extracted = structured_llm.invoke(f"Extract profile from: {last_msg}")
+        
+        # C. Logic: Merge New Facts with Existing Data
+        # We prioritize existing data if the new extraction is null
+        updated_district = extracted.district or existing_profile.get("district")
+        updated_block = extracted.block or existing_profile.get("block")
+        updated_village = extracted.village or existing_profile.get("village")
+        updated_lang = extracted.preferred_lang # AI is excellent at detecting 'Nomoskar' = Bengali
+        
+        # D. Save to Neon/Postgres
+        upsert_user_profile(
+            phone_number=user_id,
+            name=extracted.full_name or existing_profile.get("full_name"),
+            language=updated_lang,
+            district=updated_district,
+            block=updated_block,
+            village=updated_village,
+            occupation=extracted.primary_occupation or existing_profile.get("primary_occupation")
+        )
+
+        logger.info(f"🧠 Memory Sync: {user_id} | Lang: {updated_lang} | Dist: {updated_district}")
+
+        # E. Update State for the Supervisor and Writer
+        return {
+            "district": updated_district,
+            "block": updated_block,
+            "village": updated_village,
+            "preferred_lang": updated_lang,
+            "user_name": extracted.full_name or existing_profile.get("full_name", "Friend")
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Structured Extraction Error for {user_id}: {e}")
+        # Fallback to existing state if extraction fails
+        return {
+            "preferred_lang": existing_profile.get("preferred_lang", "Bengali")
+        }
