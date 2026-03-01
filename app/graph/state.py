@@ -16,7 +16,7 @@ class AgentState(TypedDict):
     # 2. User Core Info
     user_id: str
     user_name: Optional[str]
-    preferred_lang: Optional[str]  # e.g., 'Bengali', 'Hindi', 'English'
+    language: Optional[str]  # e.g., 'Bengali', 'Hindi', 'English'
 
     # 3. Hierarchical Location (Selected via WhatsApp menus)
     district: Optional[str]        # e.g., '24 PARGANAS NORTH'
