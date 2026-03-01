@@ -1,6 +1,5 @@
-# app/graph/nodes/writer.py
-
 import logging
+import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 from app.graph.state import AgentState
@@ -8,21 +7,32 @@ from app.tools.spatial import get_districts, get_blocks_for_district, get_villag
 
 logger = logging.getLogger(__name__)
 
+def detect_language(messages):
+    """
+    Detects if the user is typing in English or a local script.
+    """
+    last_user_msg = ""
+    for m in reversed(messages):
+        if not isinstance(m, AIMessage):
+            last_user_msg = m.content
+            break
+    
+    # Check for English alphabets (Latin script)
+    if re.search(r'[a-zA-Z]', last_user_msg):
+        return "English"
+    return "Bengali"
+
 def get_localized_ui_text(language, context_key, extra_context=""):
-    """
-    Generates localized UI body text and button labels dynamically.
-    Avoids hardcoding strings in the logic.
-    """
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     
     prompts = {
         "INTRO_DISTRICT": (
-            f"Write a very warm, neighborly greeting for 'EmpowerNet' in {language} script. "
-            "Explain simply that I can help find local jobs, check fair pay, and learn about women's groups. "
-            "End by asking them to select their district from the list below. Keep it under 3 sentences."
+            f"Write a very warm, neighborly greeting for 'EmpowerNet' in {language}. "
+            "Explain simply that I can help find local jobs and women's groups. "
+            "Ask them to select their district. Keep it under 2 sentences."
         ),
-        "SELECT_BLOCK": f"In {language} script, kindly ask the user which block in {extra_context} they live in.",
-        "SELECT_VILLAGE": f"In {language} script, kindly ask the user to select their village from the list."
+        "SELECT_BLOCK": f"In {language}, kindly ask which block in {extra_context} they live in.",
+        "SELECT_VILLAGE": f"In {language}, ask the user to select their village."
     }
     
     prompt = prompts.get(context_key, f"Ask the user to select an option in {language}.")
@@ -30,19 +40,16 @@ def get_localized_ui_text(language, context_key, extra_context=""):
         return llm.invoke(prompt).content
     except Exception as e:
         logger.error(f"UI Text Generation failed: {e}")
-        return "Please select an option:" # Absolute fallback
+        return "Please select an option:"
 
 def translate_ui_items(items, target_lang):
-    """
-    Translates database keys into the user's preferred script.
-    """
     if target_lang == "English":
         return items 
     
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     prompt = (
-        f"Translate these West Bengal administrative names into {target_lang} script: "
-        f"{', '.join(items)}. Return ONLY the translated names separated by commas."
+        f"Translate these administrative names into {target_lang} script: "
+        f"{', '.join(items)}. Return ONLY comma-separated names. No code, no python."
     )
     
     try:
@@ -53,65 +60,67 @@ def translate_ui_items(items, target_lang):
         return items
 
 def writer_node(state: AgentState):
-    """
-    Final Persona Node: Dynamically generates localized UI and responses.
-    """
-    language = state.get("preferred_lang", "Bengali")
+    messages = state.get("messages", [])
+    
+    # 1. DYNAMIC LANGUAGE DETECTION
+    # Instead of defaulting to Bengali, we see what the user actually typed.
+    language = detect_language(messages)
     user_name = state.get("user_name", "Friend")
+    
     district = state.get("district")
     block = state.get("block")
     village = state.get("village")
     
-    messages = state.get("messages", [])
-    specialist_report = messages[-1].content if messages else "hi"
+    specialist_report = messages[-1].content if messages else ""
 
-    # --- 2. HIERARCHICAL UI CHECK (DROPDOWNS) ---
+    # 2. SELECTIVE LOCATION GATHERING
+    # Only force the dropdowns if the specialist report mentions jobs, wages, or local data.
+    spatial_keywords = ["job", "wage", "training", "scheme", "block", "village", "district"]
+    needs_spatial_data = any(word in specialist_report.lower() for word in spatial_keywords)
 
-    # DISTRICT LEVEL (Includes the Warm Intro)
-    if not district:
-        raw = get_districts.invoke({})[:10]
-        trans = translate_ui_items(raw, language)
-        rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
-        body = get_localized_ui_text(language, "INTRO_DISTRICT")
-        return {"messages": [AIMessage(content="LIST_REQUEST:DISTRICT", additional_kwargs={"rows": rows, "body": body})]}
-    
-    # BLOCK LEVEL
-    if not block:
-        raw = get_blocks_for_district.invoke({"district": district})[:10]
-        trans = translate_ui_items(raw, language)
-        rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
-        body = get_localized_ui_text(language, "SELECT_BLOCK", extra_context=district)
-        return {"messages": [AIMessage(content="LIST_REQUEST:BLOCK", additional_kwargs={"rows": rows, "body": body})]}
+    if needs_spatial_data:
+        # DISTRICT LEVEL
+        if not district:
+            raw = get_districts.invoke({})[:10]
+            trans = translate_ui_items(raw, language)
+            rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
+            body = get_localized_ui_text(language, "INTRO_DISTRICT")
+            return {"messages": [AIMessage(content="LIST_REQUEST:DISTRICT", additional_kwargs={"rows": rows, "body": body})]}
+        
+        # BLOCK LEVEL
+        if not block:
+            raw = get_blocks_for_district.invoke({"district": district})[:10]
+            trans = translate_ui_items(raw, language)
+            rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
+            body = get_localized_ui_text(language, "SELECT_BLOCK", extra_context=district)
+            return {"messages": [AIMessage(content="LIST_REQUEST:BLOCK", additional_kwargs={"rows": rows, "body": body})]}
 
-    # VILLAGE LEVEL
-    if not village:
-        raw = get_villages_for_block.invoke({"block": block})[:10]
-        trans = translate_ui_items(raw, language)
-        rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
-        body = get_localized_ui_text(language, "SELECT_VILLAGE")
-        return {"messages": [AIMessage(content="LIST_REQUEST:VILLAGE", additional_kwargs={"rows": rows, "body": body})]}
+        # VILLAGE LEVEL
+        if not village:
+            raw = get_villages_for_block.invoke({"block": block})[:10]
+            trans = translate_ui_items(raw, language)
+            rows = [{"id": r, "title": t} for r, t in zip(raw, trans)]
+            body = get_localized_ui_text(language, "SELECT_VILLAGE")
+            return {"messages": [AIMessage(content="LIST_REQUEST:VILLAGE", additional_kwargs={"rows": rows, "body": body})]}
 
-    # --- 3. DYNAMIC NEIGHBORLY PERSONA ---
-    # Once location is known, generate the final advice.
+    # 3. DYNAMIC NEIGHBORLY PERSONA
+    # If no location is needed or it's all gathered, respond naturally.
     llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
     
     persona_prompt = f"""
-    You are the EmpowerNet Assistant, a supportive neighbor for women in rural West Bengal. 
+    You are the EmpowerNet Assistant, a supportive neighbor. 
     
     USER CONTEXT:
     - Name: {user_name}
-    - Location: {village}, {block}, {district}
-    - Findings to explain: "{specialist_report}"
+    - Location: {village or 'Not specified'}, {block or ''}, {district or ''}
+    - Findings: "{specialist_report}"
 
     STRICT VOICE RULES:
-    1. GREETING: Start with a warm localized greeting (e.g., 'Nomoskar' for Bengali).
-    2. NO JARGON: Never mention 'specialists' or 'technical data'. Say "I found this for you".
-    3. LANGUAGE: Use {language} script ONLY. 
-    4. SIMPLICITY: Explain technical things (like minimum wage or vocational training) in simple, neighborly terms.
-    5. EMPATHY: End with a supportive note about their family or future.
+    1. GREETING: Warm greeting in {language}.
+    2. LANGUAGE: Use {language} script ONLY. 
+    3. NO METADATA: Do not mention 'LIST_REQUEST' or 'Specialist'. 
+    4. SIMPLICITY: Explain everything like you're talking to a sister.
     """
 
-    logger.info(f"✍️ Writer Node: Relaying data for {user_name} in {language}")
     response = llm.invoke(persona_prompt)
-    
     return {"messages": [AIMessage(content=response.content)]}
