@@ -21,22 +21,7 @@ _LANGUAGE_NAME_TO_CODE = {
 
 
 def transcribe_audio(file_path: str, known_language: Optional[str] = None) -> str:
-    """
-    Transcribes audio voice notes (OGG, MP3, etc.) into text for the
-    EmpowerNet Supervisor swarm to process.
-
-    FIX (weak point #10, docstring hygiene): this previously referenced
-    "the VESTA Supervisor agent" -- a leftover from an earlier/different
-    project name that was never updated.
-
-    FIX (weak point #18): previously always called with `language=None`
-    (full auto-detect) even when the user's preferred language is already
-    known from their saved profile. When `known_language` is provided
-    ("Bengali"/"English"/"Hindi"), we now pass the matching Whisper language
-    code, which both removes ambiguity for code-switched speech and
-    generally improves accuracy versus blind auto-detection. If it's
-    unknown (e.g. a brand-new user), we still fall back to auto-detect.
-    """
+    
     client = openai.OpenAI()
 
     language_code = None

@@ -20,22 +20,7 @@ APP_SECRET = os.getenv("WHATSAPP_APP_SECRET")  # Meta App Secret, for signature 
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
-    """
-    FIX (weak point #20): the /webhook POST route previously had no
-    authentication at all beyond the one-time GET verify-token handshake --
-    anyone who discovered the URL could POST fabricated WhatsApp payloads
-    and they'd be processed as if they came from Meta.
-
-    Meta signs every webhook POST body with HMAC-SHA256 using your app
-    secret, delivered in the `X-Hub-Signature-256` header as
-    "sha256=<hex digest>". This recomputes that digest over the raw request
-    body and compares it in constant time.
-
-    If WHATSAPP_APP_SECRET isn't configured, this fails "closed" (returns
-    False) rather than silently skipping verification -- see main.py, which
-    logs a loud warning at startup if the secret is missing so this doesn't
-    fail silently in production.
-    """
+    
     if not APP_SECRET or not signature_header:
         return False
 

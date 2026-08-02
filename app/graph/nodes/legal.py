@@ -27,22 +27,7 @@ def legal_node(state: AgentState):
     # We combine user skills and location to get the exact minimum wage entry
     search_query = f"2026 minimum wage and labor rights for {user_skills} in {location}, West Bengal"
 
-    # 3. Call the Compliance Tool (RAG retrieval + audit generation)
-    #
-    # FIX (weak point #9): the old version took this already-generated audit
-    # report (check_labor_compliance -> empower_search already runs its own
-    # GPT-4o call that produces a full compliance audit against the RAG
-    # context) and fed it into a *second*, near-duplicate LLM call here,
-    # asking gpt-4o-mini to re-analyze the same thing again. That's two
-    # sequential model calls doing overlapping work on every single legal
-    # query -- extra cost and latency for no measurable quality gain, since
-    # the second call had no new information the first call didn't already
-    # have (it doesn't even have `user_skills`/location, only free text).
-    #
-    # search.py's empower_search is the *only* place that does the actual
-    # law-context-grounded reasoning now; this node's job is purely to
-    # build the right query (with real location + skills) and pass the
-    # result along as the specialist report -- no redundant re-analysis.
+    
     audit_result = check_labor_compliance.invoke({"query": search_query})
 
     # 5. Return the report to the state

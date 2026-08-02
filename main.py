@@ -26,9 +26,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# FIX (weak point #20): warn loudly at startup (rather than fail silently at
-# request time) if webhook signature verification can't actually run because
-# the app secret isn't configured.
 if not os.getenv("WHATSAPP_APP_SECRET"):
     logger.warning(
         "⚠️ WHATSAPP_APP_SECRET is not set -- incoming webhook POSTs will be "
