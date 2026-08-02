@@ -1,0 +1,80 @@
+# --- Web Framework & Server ---
+fastapi==0.128.0
+uvicorn==0.40.0
+starlette==0.50.0
+python-multipart==0.0.21
+requests==2.32.5
+httpx==0.28.1
+aiofiles==25.1.0
+python-dotenv==1.2.1
+
+# --- The Swarm Brain (2026 Agentic AI Stack) ---
+langchain==1.2.7
+langchain-community==0.4.1
+langchain-core==1.2.7
+langchain-openai==1.1.7
+langgraph==1.0.7
+# FIX (weak point #1): required for the PostgresSaver checkpointer wired up
+# in app/graph/builder.py, so LangGraph's own conversation state actually
+# persists across turns/restarts instead of only living in-process.
+langgraph-checkpoint-postgres==2.0.13
+pydantic==2.12.5
+pydantic-settings==2.12.0
+openai==2.15.0
+tiktoken==0.12.0
+
+# --- Database & Vector Search ---
+pgvector==0.4.2
+psycopg2-binary==2.9.11
+SQLAlchemy==2.0.46
+
+# --- Geospatial & PDF Tools ---
+geopy==2.4.1
+geographiclib==2.1
+pypdf==6.6.0
+Faker==40.4.0
+
+# --- Data Processing & Utilities ---
+numpy==2.4.1
+pandas==3.0.1
+beautifulsoup4==4.14.3
+PyYAML==6.0.3
+regex==2026.1.15
+tqdm==4.67.1
+anyio==4.12.1
+certifi==2026.1.4
+
+# --- NGO Admin Dashboard (app/api/dashboard.py) ---
+# FIX (weak point #13): these were imported directly by dashboard.py but
+# were never listed here at all -- a fresh `pip install -r requirements.txt`
+# followed by running the dashboard would have crashed with
+# ModuleNotFoundError the moment it was deployed as its own service.
+dash==2.18.2
+dash-bootstrap-components==1.6.0
+plotly==5.24.1
+
+# --- Async & Connection Utilities ---
+aiohttp==3.13.3
+aiosignal==1.4.0
+frozenlist==1.8.0
+multidict==6.7.0
+yarl==1.22.0
+websockets==16.0
+
+# --- NGO Admin Dashboard ---
+# FIX (weak point #13): dash, plotly, and dash-bootstrap-components were
+# imported throughout app/api/dashboard.py but were missing from this file
+# entirely -- a fresh `pip install -r requirements.txt` followed by running
+# the dashboard would crash with ModuleNotFoundError. Pinned versions below
+# match what dashboard.py's API usage (dcc/html/Input/Output/State/
+# callback_context/dash_table, dbc components, go.Figure) expects.
+dash==2.18.2
+dash-bootstrap-components==1.6.0
+plotly==5.24.1
+
+# --- System & Meta ---
+click==8.3.1
+colorama==0.4.6
+packaging==25.0
+setuptools==80.10.1
+typing_extensions==4.15.0
