@@ -7,13 +7,7 @@ from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 
-# FIX (weak point #7): upsert_user_profile previously only called
-# conn.close() on the success path inside `with conn:` -- if
-# psycopg2.connect() itself raised, or the execute failed before reaching
-# that block, the connection was never closed (no `finally`). Using
-# `engine.begin()` / `engine.connect()` as a context manager here guarantees
-# the pooled connection is always released, success or failure, with no
-# custom cleanup code needed.
+
 
 def upsert_user_profile(
     phone_number: str,

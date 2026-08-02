@@ -35,13 +35,7 @@ def memory_node(state: AgentState):
     has_district = existing_profile.get("district") is not None
     has_block = existing_profile.get("block") is not None
 
-    # -------------------------------------------------------------------
-    # FIX (weak point #19, part 2): if the user just tapped the paginated
-    # "More Options" row, this is NOT a real location value -- running the
-    # extraction LLM on it would risk it being mis-saved as a village/block
-    # name. Recognize the sentinel here, skip extraction entirely, bump the
-    # page offset, and pass the existing profile straight through unchanged.
-    # -------------------------------------------------------------------
+    
     if last_msg.strip() in (MORE_OPTIONS_ID, MORE_OPTIONS_TITLE):
         next_offset = (state.get("location_offset") or 0) + 1
         logger.info(f"➡️ 'More Options' selected -- advancing location_offset to {next_offset}")

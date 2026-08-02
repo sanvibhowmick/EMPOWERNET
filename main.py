@@ -36,13 +36,7 @@ if not os.getenv("WHATSAPP_APP_SECRET"):
         "App's secret to accept real WhatsApp traffic."
     )
 
-# --- ANTI-RETRY SHIELD ---
-# FIX (weak point #2, part of #6 family): the old version used a plain
-# `set()` with `.pop()` for eviction once it passed 500 entries -- `set.pop()`
-# removes an *arbitrary* element, not the oldest one, so the eviction policy
-# wasn't really LRU/FIFO despite the surrounding comment implying it was.
-# A deque with maxlen gives true FIFO eviction (oldest message ID dropped
-# first) with O(1) append, paired with a set for O(1) membership checks.
+
 PROCESSED_MESSAGE_IDS_ORDER = deque(maxlen=500)
 PROCESSED_MESSAGE_IDS = set()
 
@@ -66,12 +60,7 @@ async def run_empowernet_swarm(user_data: dict):
     user_input = user_data["content"]
     msg_id = user_data.get("id", "unknown")
 
-    # FIX (weak point #17): previously, if anything raised inside this
-    # function -- including hitting the graph's recursion_limit -- the
-    # exception was logged but the user received *no reply at all*, since
-    # the webhook had already returned {"status": "success"} to Meta before
-    # this background task even started. We now always attempt to notify
-    # the user on failure, in whatever language we last knew for them.
+
     from app.api.whatsapp import send_whatsapp_message, send_whatsapp_list
     from app.tools.memory import get_user_context
     from langgraph.errors import GraphRecursionError
@@ -130,14 +119,7 @@ async def run_empowernet_swarm(user_data: dict):
         logger.info(f"🏁 [SUCCESS] Interaction {msg_id} complete.")
 
     except GraphRecursionError as e:
-        # FIX (weak point #17): previously this was caught only by the
-        # generic `except Exception` below, logged, and then the user
-        # received NOTHING -- the webhook had already returned success to
-        # Meta before this background task even ran. If the supervisor keeps
-        # bouncing between nodes (e.g. a specialist not setting
-        # `specialist_done`), the graph now hits its recursion_limit, we log
-        # it distinctly from other failures, and the user still gets a
-        # clear, honest message instead of silence.
+   
         logger.error(f"❌ [RECURSION LIMIT] Swarm exceeded recursion_limit for {msg_id}: {e}", exc_info=True)
         try:
             profile = get_user_context(user_id)
@@ -185,11 +167,7 @@ async def main_entry(request: Request, background_tasks: BackgroundTasks):
     """
     from app.api.whatsapp import handle_whatsapp_message, verify_webhook_signature
 
-    # FIX (weak point #20): verify Meta's HMAC signature on every POST before
-    # doing anything else. Fails closed (403) if the secret isn't configured
-    # or the signature doesn't match -- previously there was no verification
-    # here at all, so any POST to this URL was processed as if it were a
-    # genuine Meta webhook delivery.
+
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not verify_webhook_signature(raw_body, signature):

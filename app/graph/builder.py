@@ -47,30 +47,6 @@ builder.add_edge("opportunity", "supervisor")
 
 builder.add_edge("writer", END)
 
-
-# ---------------------------------------------------------------------------
-# FIX (weak point #1): main.py passes a `thread_id` into the graph's config
-# and its comments call this "persistent memory," but `builder.compile()`
-# previously took no `checkpointer=`, so LangGraph had nothing to actually
-# persist between separate `invoke()` calls -- every WhatsApp message ran the
-# graph completely fresh. The only real continuity came from re-reading the
-# Postgres `user_profile` table at the top of `memory_node` every turn.
-#
-# We now wire a real checkpointer so `thread_id` does what the code already
-# claimed it did: the graph's own state (messages, routing decisions, etc.)
-# persists per phone number across turns, not just the hand-picked profile
-# fields that `memory_node` chooses to save.
-#
-# Preferred: PostgresSaver, backed by the same Neon database everything else
-# uses, so state actually survives process restarts/redeploys.
-#   pip install langgraph-checkpoint-postgres
-#   (one-time) checkpointer.setup()  -- creates the checkpoint tables
-#
-# Fallback: MemorySaver, so the graph still has *working* short-term memory
-# during local development / if the Postgres checkpoint tables haven't been
-# provisioned yet -- this is strictly better than "no checkpointer at all,"
-# but does NOT survive a process restart, so it's a dev-mode fallback only.
-# ---------------------------------------------------------------------------
 def _build_checkpointer():
     from app.core.db import DB_URL
 

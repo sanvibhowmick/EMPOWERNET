@@ -12,14 +12,7 @@ from app.tools.spatial import get_village_coordinates
 logger = logging.getLogger(__name__)
 
 
-# FIX (weak point #10): the old version asked the LLM to "return ONLY a
-# valid JSON object" and then hand-parsed it with
-# `.strip().strip('`').replace('json', '')` + `json.loads(...)`, wrapped in
-# a try/except specifically because that pattern is fragile (extra prose,
-# different code-fence styles, etc. all break it). Every other extraction
-# node in this codebase (memory_node, supervisor_node) uses
-# `with_structured_output` for exactly this reason -- this node now does
-# the same, for consistency and reliability.
+
 class SafetyReportExtraction(BaseModel):
     """Structured extraction of a worker's safety complaint."""
     category: Literal["Workplace", "Infrastructure", "Health"] = Field(
@@ -73,14 +66,7 @@ def reporting_node(state: AgentState):
 
     logger.info(f"🚩 Reporting Node: Processing {category} for {village}, {block}")
 
-    # 2b. FIX (weak point #12): resolve village coordinates so the report
-    # can actually be plotted / included in the dashboard's lat/lon-based
-    # geographic queries. Previously submit_safety_report never wrote
-    # lat/lon at all, so every report submitted through the real bot
-    # silently failed the dashboard's district-level safety KPI (which
-    # filters on `lat BETWEEN ... AND lon BETWEEN ...`). This is optional/
-    # best-effort -- if the hierarchy table has no coordinates for this
-    # village yet, we still file the report without them.
+
     lat: Optional[float] = None
     lon: Optional[float] = None
     try:

@@ -11,9 +11,7 @@ from app.core.db import engine
 logger = logging.getLogger(__name__)
 
 # --- 1. HIERARCHICAL LOCATION TOOLS ---
-# FIX (weak point #6/#7): these now go through the shared, pooled
-# `engine` from app/core/db.py instead of each function opening its own
-# raw psycopg2 connection and manually closing it in a `finally` block.
+
 
 @tool
 def get_districts() -> list[str]:
@@ -72,12 +70,7 @@ def get_village_coordinates(district: str, block: str, village: str) -> Optional
     Looks up the (lat, lon) centroid of a specific village from
     administrative_hierarchy.village_center_geog.
 
-    FIX (weak point #12): app/tools/reporting.py's submit_safety_report
-    previously never wrote lat/lon on safety_reports at all, which meant the
-    NGO dashboard's district-level safety KPI (which filters on a lat/lon
-    bounding box) silently returned zero for every report actually filed
-    through the WhatsApp bot. reporting_node now calls this tool first and
-    passes the result through to submit_safety_report.
+
     """
     try:
         with engine.connect() as conn:
@@ -102,21 +95,6 @@ def get_village_coordinates(district: str, block: str, village: str) -> Optional
         return None
 
 
-# --- 2. GEOCODING TOOLS (GPS fallback) ---
-#
-# FIX (weak point #14): these two tools previously existed but were never
-# called from anywhere in the graph -- genuinely dead code. They're now
-# wired in:
-#   - decode_location_from_coordinates is called from
-#     app/api/whatsapp.py when a WhatsApp GPS location pin arrives, so a
-#     shared/live-location message actually gets reverse-geocoded into a
-#     human-readable place name instead of only ever being passed through
-#     as raw "Lat: x, Lon: y" text.
-#   - get_lat_lon_from_name remains available as a utility for a possible
-#     future free-text ("type your village name") fallback input path, which
-#     doesn't exist yet in this codebase; it is intentionally still not
-#     wired into a specific node so that isn't a silent gap anymore --
-#     it's a documented, deliberate "not yet built" rather than orphaned code.
 
 @tool
 def get_lat_lon_from_name(location_name: str) -> str:

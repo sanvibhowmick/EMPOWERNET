@@ -23,14 +23,7 @@ def supervisor_node(state: AgentState):
     """
 
     # --- HARD GUARD 1: BREAK THE LOOP ---
-    # FIX (weak point #3): this used to be a substring match on the last
-    # message's text (`"SUMMARY"`/`"REPORT"`/`"FINDINGS"`), which only
-    # worked because every specialist's signal string happened to contain
-    # one of those words (e.g. "SAFETY_REPORT_SUBMITTED" -> "REPORT"). A
-    # future rename of any of those signal strings would silently break
-    # routing. Specialist nodes now set `specialist_done: True` explicitly
-    # in the state they return, and we check that typed flag instead of
-    # sniffing text content.
+    
     if state.get("specialist_done"):
         logger.info("✅ Specialist work complete (specialist_done=True). Routing to WRITER.")
         # Reset the flag so a later turn doesn't skip the router again.

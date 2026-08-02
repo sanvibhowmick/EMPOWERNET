@@ -71,12 +71,7 @@ def opportunity_node(state: AgentState):
         results_summary.append(f"JOBS_FOUND: {job_data}")
 
     if intent in ["TRAINING", "ALL"]:
-        # FIX (weak point #5): get_training_programs used to accept `block`
-        # and `village` parameters that the SQL never referenced at all
-        # (training_programs has no block/village columns -- matching is
-        # district-only). Passing them in was dead/misleading code implying
-        # a granularity the tool doesn't actually support. The tool's
-        # signature no longer accepts them -- see app/tools/training.py.
+       
         training_data = get_training_programs.invoke({
             "district": district,
             "category": skills

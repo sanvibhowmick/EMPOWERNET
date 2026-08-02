@@ -16,14 +16,6 @@ def legal_node(state: AgentState):
     last_user_msg = messages[-1].content if messages else ""
     user_skills = state.get("user_skills") or "General Worker"
 
-    # FIX (weak point #2): this used to read `state.get("location_name")`,
-    # a key that does not exist anywhere in AgentState (only district/block/
-    # village do) -- so `.get()` silently fell back to its default every
-    # single time, and the RAG query always searched for
-    # "... in West Bengal, West Bengal" regardless of the user's actual,
-    # fully-known district. We now build the location string from the real
-    # hierarchical fields, which matters because West Bengal's minimum wage
-    # is legally zone/district-differentiated.
     district = state.get("district")
     block = state.get("block")
     location_parts = [p for p in [block, district] if p]

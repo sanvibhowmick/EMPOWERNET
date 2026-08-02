@@ -8,14 +8,6 @@ from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 
-# FIX (weak point #4): the README claims "jobs.py filters out sites with
-# safety_score < 2.0 from all future job searches," but the query previously
-# only used safety_score in ORDER BY, never in WHERE -- unsafe sites were
-# still returned, just ranked lower. We now filter them out for real. To
-# avoid silently showing nothing in a village where every listed site has
-# been flagged unsafe, we run the safe-only query first and only fall back
-# to the unfiltered (but still safety-ranked) query -- with an explicit
-# warning in the response -- if the safe query returns zero rows.
 SAFETY_SCORE_THRESHOLD = 2.0
 
 _BASE_QUERY = """

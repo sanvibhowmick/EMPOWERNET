@@ -24,12 +24,7 @@ def submit_safety_report(
     Logs a safety complaint in English and automatically updates the safety score
     of all vetted job sites in the reporter's specific village.
 
-    FIX (weak point #12): lat/lon are now accepted and stored (best-effort --
-    they may be None if no coordinates were resolvable for the village).
-    Previously this always left lat/lon NULL, which meant every report filed
-    through the real WhatsApp bot was invisible to the NGO dashboard's
-    lat/lon-bounding-box safety queries. reporting_node resolves these via
-    app/tools/spatial.py's get_village_coordinates before calling this tool.
+   
     """
 
     # 1. SQL to insert the report using Hierarchy + (optional) coordinates

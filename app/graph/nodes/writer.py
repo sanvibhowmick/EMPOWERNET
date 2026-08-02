@@ -52,13 +52,7 @@ def translate_ui_items(items, target_lang):
 
 def _build_paginated_rows(raw_items, current_lang, offset):
     """
-    FIX (weak point #19): the old code did `raw[:10]`, silently dropping any
-    district/block/village beyond the 10th alphabetically -- West Bengal has
-    23 districts, so 13 of them were permanently unreachable through the
-    WhatsApp menu. WhatsApp interactive lists cap at 10 rows total, so we
-    show PAGE_SIZE (9) real items per page plus a 10th "More Options" row
-    that advances `location_offset` and re-renders the next page (wrapping
-    back to the start once you page past the end).
+    
 
     Returns (rows_for_this_page_raw_labels, translated_titles).
     """

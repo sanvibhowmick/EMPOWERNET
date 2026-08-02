@@ -14,12 +14,7 @@ def get_training_programs(category: str, district: str):
     Finds vocational training and skill-building programs for unorganised sector workers.
     Matches by district first, then falls back to category keywords.
     """
-    # FIX (weak point #5): this tool used to also accept `block` and
-    # `village` parameters that were never referenced anywhere in the SQL --
-    # training_programs has no block/village columns, so matching has always
-    # been district-only. Keeping unused parameters in the signature implied
-    # a granularity the tool doesn't actually support and was dead/misleading
-    # code. opportunity_node has been updated to match this signature.
+   
 
     search_term = f"%{category}%" if category and str(category).lower() != "none" else "%"
     dist_term = f"%{district}%" if district else "%"
