@@ -2,17 +2,7 @@
 """
 Single shared, pooled database engine for the entire application.
 
-FIXES:
-  - Weak point #6: three different DB-access patterns (raw psycopg2 in most
-    tool files, SQLAlchemy in reporting.py, raw psycopg2 again in the
-    dashboard) with a brand-new connection opened and torn down on every
-    single call. Every module now imports `engine` from here instead of
-    rolling its own connection logic.
-  - Weak point #7: connection leak on the exception path in
-    app/tools/memory.py's upsert_user_profile (conn.close() was only
-    reachable on the success path). Because every caller now goes through
-    `engine.connect()` / `engine.begin()` as a context manager, the
-    connection is always returned to the pool, even on an exception.
+
 
 Usage:
     from app.core.db import engine
